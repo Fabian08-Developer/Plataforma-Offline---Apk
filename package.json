@@ -15,9 +15,11 @@
     "@capacitor/cli": "^8.4.1",
     "@capacitor/core": "^8.4.1",
     "jeep-sqlite": "^2.8.0",
+    "libphonenumber-js": "^1.13.7",
     "lucide-react": "^1.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-phone-number-input": "^3.4.17",
     "react-router-dom": "^7.18.1",
     "sql.js": "^1.11.0"
   },

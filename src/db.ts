@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 
 export interface Survey {
   id?: number;
+  tipo_documento: string;
   documento_identidad: string;
   nombres: string;
   apellidos: string;
@@ -47,9 +48,12 @@ class DatabaseService {
 
       await this.db.open();
 
+      await this.db.execute('DROP TABLE IF EXISTS encuestas;');
+
       const schema = `
         CREATE TABLE IF NOT EXISTS encuestas (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          tipo_documento TEXT NOT NULL,
           documento_identidad TEXT NOT NULL,
           nombres TEXT NOT NULL,
           apellidos TEXT NOT NULL,
@@ -74,11 +78,12 @@ class DatabaseService {
   async addSurvey(survey: Survey): Promise<void> {
     const query = `
       INSERT INTO encuestas (
-        documento_identidad, nombres, apellidos, telefono_1, telefono_2, telefono_3,
+        tipo_documento, documento_identidad, nombres, apellidos, telefono_1, telefono_2, telefono_3,
         direccion, fecha_registro, profesion, estado_sincronizacion
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `;
     const values = [
+      survey.tipo_documento,
       survey.documento_identidad,
       survey.nombres,
       survey.apellidos,
@@ -97,11 +102,12 @@ class DatabaseService {
   async updateSurvey(id: number, survey: Survey): Promise<void> {
     const query = `
       UPDATE encuestas SET
-        documento_identidad = ?, nombres = ?, apellidos = ?, telefono_1 = ?, telefono_2 = ?, telefono_3 = ?,
+        tipo_documento = ?, documento_identidad = ?, nombres = ?, apellidos = ?, telefono_1 = ?, telefono_2 = ?, telefono_3 = ?,
         direccion = ?, fecha_registro = ?, profesion = ?, estado_sincronizacion = ?
       WHERE id = ?;
     `;
     const values = [
+      survey.tipo_documento,
       survey.documento_identidad,
       survey.nombres,
       survey.apellidos,

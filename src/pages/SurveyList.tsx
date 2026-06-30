@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { dbService, type Survey } from '../db';
-import { Plus, User, Calendar, MapPin, Phone, WifiOff, Wifi } from 'lucide-react';
+import { Plus, User, Calendar, MapPin, Phone, WifiOff, Wifi, IdCard } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function SurveyList() {
@@ -62,7 +62,7 @@ export default function SurveyList() {
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <User size={16} /> <span>CC: {survey.documento_identidad}</span>
+                  <IdCard size={16} /> <span>{survey.tipo_documento}: {survey.documento_identidad}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Phone size={16} /> <span>{survey.telefono_1}</span>

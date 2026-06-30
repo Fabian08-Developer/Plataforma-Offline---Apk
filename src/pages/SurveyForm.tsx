@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { dbService, type Survey } from '../db';
 import { updatePhonesList } from '../services/phoneLogic';
 import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import PhoneInput from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
 
 export default function SurveyForm() {
   const { id } = useParams();
@@ -11,6 +13,7 @@ export default function SurveyForm() {
 
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<Partial<Survey>>({
+    tipo_documento: 'C.C',
     documento_identidad: '',
     nombres: '',
     apellidos: '',
@@ -97,7 +100,22 @@ export default function SurveyForm() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Documento de Identidad *</label>
-            <input required type="text" name="documento_identidad" value={formData.documento_identidad || ''} onChange={handleChange} className="form-input" placeholder="Ej. 123456789" />
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <select name="tipo_documento" value={formData.tipo_documento || 'C.C'} onChange={handleChange} className="form-input" style={{ width: '85px', padding: '0.5rem' }}>
+                <option value="C.C">C.C</option>
+                <option value="T.I">T.I</option>
+                <option value="C.E">C.E</option>
+                <option value="NIT">NIT</option>
+                <option value="PAS">PAS</option>
+              </select>
+              <input required type="text" name="documento_identidad" value={formData.documento_identidad || ''} 
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  setFormData({...formData, documento_identidad: val});
+                }} 
+                maxLength={15}
+                className="form-input" placeholder="Ej. 123456789" style={{ flex: 1 }} />
+            </div>
           </div>
 
           <div className="form-group" style={{ margin: 0 }}>
@@ -107,12 +125,24 @@ export default function SurveyForm() {
 
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Nombres *</label>
-            <input required type="text" name="nombres" value={formData.nombres || ''} onChange={handleChange} className="form-input" placeholder="Ej. Juan Carlos" />
+            <input required type="text" name="nombres" value={formData.nombres || ''} 
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^a-zA-Z\sñÑáéíóúÁÉÍÓÚ]/g, '');
+                setFormData({...formData, nombres: val});
+              }} 
+              maxLength={50}
+              className="form-input" placeholder="Ej. Juan Carlos" />
           </div>
 
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Apellidos *</label>
-            <input required type="text" name="apellidos" value={formData.apellidos || ''} onChange={handleChange} className="form-input" placeholder="Ej. Pérez" />
+            <input required type="text" name="apellidos" value={formData.apellidos || ''} 
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^a-zA-Z\sñÑáéíóúÁÉÍÓÚ]/g, '');
+                setFormData({...formData, apellidos: val});
+              }} 
+              maxLength={50}
+              className="form-input" placeholder="Ej. Pérez" />
           </div>
           
           <div className="form-group" style={{ margin: 0 }}>
@@ -142,12 +172,13 @@ export default function SurveyForm() {
 
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">Agregar / Actualizar Teléfono</label>
-                <input 
-                  type="tel" 
-                  value={newPhoneInput} 
-                  onChange={(e) => setNewPhoneInput(e.target.value)} 
-                  className="form-input" 
-                  placeholder="Ingrese el nuevo número de contacto" 
+                <PhoneInput 
+                  defaultCountry="CO"
+                  international
+                  value={newPhoneInput as any} 
+                  onChange={(val) => setNewPhoneInput(val || '')} 
+                  className="form-input phone-wrapper"
+                  placeholder="Ej. 300 123 4567" 
                 />
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                   Al guardar, este número pasará a ser el principal (Contacto 1) y los demás se ajustarán automáticamente.
@@ -157,7 +188,14 @@ export default function SurveyForm() {
           ) : (
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label">Teléfono de Contacto 1 *</label>
-              <input required type="tel" name="telefono_1" value={formData.telefono_1 || ''} onChange={handleChange} className="form-input" placeholder="Ej. 3001234567" />
+              <PhoneInput 
+                defaultCountry="CO"
+                international
+                value={(formData.telefono_1 as any) || ''} 
+                onChange={(val) => setFormData({...formData, telefono_1: val || ''})} 
+                className="form-input phone-wrapper"
+                placeholder="Ej. 300 123 4567" 
+              />
             </div>
           )}
         </div>
