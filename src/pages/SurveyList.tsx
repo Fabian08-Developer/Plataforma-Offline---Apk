@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react';
 import { dbService, type Survey } from '../db';
-import { Plus, User, Calendar, MapPin, Phone, WifiOff, Wifi, IdCard } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Plus, User, Calendar, MapPin, Phone, WifiOff, Wifi, IdCard, LogOut } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 export default function SurveyList() {
   const [surveys, setSurveys] = useState<Survey[]>([]);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const loadSurveys = async () => {
     try {
-      const data = await dbService.getAllSurveys();
-      setSurveys(data);
+      if (user?.id) {
+        const data = await dbService.getSurveysByEncuestador(user.id);
+        setSurveys(data);
+      }
     } catch (error) {
       console.error('Error loading surveys:', error);
     }
@@ -24,13 +29,21 @@ export default function SurveyList() {
     };
   }, []);
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   return (
     <div className="page-view container" style={{ paddingTop: '2rem' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
-          <h1 className="app-title" style={{ fontSize: '2rem' }}>Encuestas</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Gestiona tus registros offline y online.</p>
+          <h1 className="app-title" style={{ fontSize: '2rem' }}>Mis Encuestas</h1>
+          <p style={{ color: 'var(--text-muted)' }}>Bienvenido, {user?.nombre}</p>
         </div>
+        <button onClick={handleLogout} className="btn btn-icon btn-outline" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }} title="Cerrar sesión">
+          <LogOut size={20} />
+        </button>
       </header>
 
       {surveys.length === 0 ? (

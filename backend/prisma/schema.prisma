@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Usuario {
+  id           Int        @id @default(autoincrement())
+  nombre       String
+  usuario      String     @unique
+  password     String
+  rol          String     @default("encuestador")
+  estado       Boolean    @default(true)
+  creado_en    DateTime   @default(now())
+  encuestas    Encuesta[]
+}
+
+model Encuesta {
+  id                    Int      @id @default(autoincrement())
+  encuestador_id        Int
+  encuestador           Usuario  @relation(fields: [encuestador_id], references: [id])
+  tipo_documento        String
+  documento_identidad   String
+  nombres               String
+  apellidos             String
+  telefono_1            String
+  telefono_2            String?
+  telefono_3            String?
+  direccion             String
+  profesion             String?
+  fecha_registro        String
+  estado_sincronizacion String
+  sincronizado_en       DateTime @default(now())
+}

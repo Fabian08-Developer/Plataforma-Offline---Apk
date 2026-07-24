@@ -5,10 +5,12 @@ import { updatePhonesList } from '../services/phoneLogic';
 import { ArrowLeft, Save, Loader2 } from 'lucide-react';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
+import { useAuth } from '../context/AuthContext';
 
 export default function SurveyForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isEditing = !!id;
 
   const [loading, setLoading] = useState(false);
@@ -40,7 +42,7 @@ export default function SurveyForm() {
     loadSurvey();
   }, [id, isEditing]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -63,6 +65,7 @@ export default function SurveyForm() {
       finalData.telefono_2 = updatedPhones[1] || '';
       finalData.telefono_3 = updatedPhones[2] || '';
       finalData.estado_sincronizacion = 'pendiente';
+      finalData.encuestador_id = user?.id;
 
       if (isEditing) {
         await dbService.updateSurvey(Number(id), finalData);
