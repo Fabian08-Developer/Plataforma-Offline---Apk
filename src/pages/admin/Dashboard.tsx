@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../db';
 import type { Survey, User } from '../../db';
-import { Users, FileText, Wifi, WifiOff, LogOut } from 'lucide-react';
+import { Users, FileText, Wifi, WifiOff, LogOut, DownloadCloud } from 'lucide-react';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -81,6 +81,18 @@ export default function Dashboard() {
             <div>
               <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>Encuestadores</p>
               <h2 style={{ margin: 0, fontSize: '2rem', color: 'var(--text-main)' }}>{encuestadores.length}</h2>
+            </div>
+          </div>
+        </Link>
+
+        <Link to="/admin/actualizaciones" style={{ textDecoration: 'none' }}>
+          <div className="glass-container" style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', transition: 'transform 0.2s', border: '1px solid #3b82f6' }}>
+            <div style={{ padding: '1rem', background: '#3b82f6', color: 'white', borderRadius: '1rem' }}>
+              <DownloadCloud size={28} />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>Actualizaciones</p>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)', marginTop: '0.5rem' }}>Subir APK</h2>
             </div>
           </div>
         </Link>

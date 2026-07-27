@@ -65,7 +65,12 @@ export default function SurveyForm() {
       finalData.telefono_2 = updatedPhones[1] || '';
       finalData.telefono_3 = updatedPhones[2] || '';
       finalData.estado_sincronizacion = 'pendiente';
-      finalData.encuestador_id = user?.id;
+      
+      if (!isEditing) {
+        finalData.encuestador_id = user?.id;
+      } else {
+        finalData.encuestador_id = formData.encuestador_id;
+      }
 
       if (isEditing) {
         await dbService.updateSurvey(Number(id), finalData);
@@ -78,7 +83,11 @@ export default function SurveyForm() {
         window.dispatchEvent(new Event('trigger-sync'));
       }
       
-      navigate('/');
+      if (user?.rol === 'admin') {
+        navigate(-1);
+      } else {
+        navigate('/');
+      }
     } catch (error) {
       console.error('Error saving survey:', error);
       alert('Error al guardar la encuesta.');
@@ -100,11 +109,11 @@ export default function SurveyForm() {
 
       <form onSubmit={handleSubmit} className="glass-container" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
+        <div className="responsive-grid">
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Documento de Identidad *</label>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <select name="tipo_documento" value={formData.tipo_documento || 'C.C'} onChange={handleChange} className="form-input" style={{ width: '85px', padding: '0.5rem' }}>
+              <select name="tipo_documento" value={formData.tipo_documento || 'C.C'} onChange={handleChange} className="form-input" style={{ width: '30%', minWidth: '70px', padding: '0.5rem' }}>
                 <option value="C.C">C.C</option>
                 <option value="T.I">T.I</option>
                 <option value="C.E">C.E</option>
@@ -117,7 +126,7 @@ export default function SurveyForm() {
                   setFormData({...formData, documento_identidad: val});
                 }} 
                 maxLength={15}
-                className="form-input" placeholder="Ej. 123456789" style={{ flex: 1 }} />
+                className="form-input" placeholder="Ej. 123456789" style={{ width: '70%', flex: 1 }} />
             </div>
           </div>
 
@@ -204,7 +213,7 @@ export default function SurveyForm() {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-          <button type="submit" disabled={loading} className="btn btn-primary" style={{ minWidth: '150px' }}>
+          <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%' }}>
             {loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
             {isEditing ? 'Actualizar' : 'Guardar'}
           </button>

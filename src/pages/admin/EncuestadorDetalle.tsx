@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../../db';
 import type { Survey, User } from '../../db';
-import { ArrowLeft, IdCard, MapPin, Calendar, Phone, Wifi, WifiOff } from 'lucide-react';
+import { ArrowLeft, IdCard, MapPin, Calendar, Phone, Wifi, WifiOff, Edit } from 'lucide-react';
 
 export default function EncuestadorDetalle() {
   const { id } = useParams();
@@ -53,14 +53,24 @@ export default function EncuestadorDetalle() {
           {surveys.map(survey => (
             <div key={survey.id} className="glass-container survey-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{survey.nombres} {survey.apellidos}</h3>
-                <span className={`badge ${survey.estado_sincronizacion === 'pendiente' ? 'badge-pending' : 'badge-sync'}`}>
-                  {survey.estado_sincronizacion === 'pendiente' ? (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><WifiOff size={12} /> Pendiente</span>
-                  ) : (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Wifi size={12} /> Sincronizado</span>
-                  )}
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{survey.nombres} {survey.apellidos}</h3>
+                  <span className={`badge ${survey.estado_sincronizacion === 'pendiente' ? 'badge-pending' : 'badge-sync'}`} style={{ width: 'fit-content' }}>
+                    {survey.estado_sincronizacion === 'pendiente' ? (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><WifiOff size={12} /> Pendiente</span>
+                    ) : (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Wifi size={12} /> Sincronizado</span>
+                    )}
+                  </span>
+                </div>
+                <button 
+                  onClick={() => navigate(`/admin/edit/${survey.id}`)}
+                  className="btn btn-icon btn-outline" 
+                  title="Editar Encuesta"
+                  style={{ padding: '0.5rem' }}
+                >
+                  <Edit size={16} />
+                </button>
               </div>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>

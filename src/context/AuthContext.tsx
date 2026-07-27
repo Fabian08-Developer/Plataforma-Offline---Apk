@@ -5,7 +5,7 @@ import type { User } from '../db';
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (userData: User, token: string) => void;
+  login: (userData: User, token?: string) => void;
   logout: () => void;
   isLoading: boolean;
 }
@@ -27,11 +27,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const login = (userData: User, authToken: string) => {
+  const login = (userData: User, authToken?: string) => {
     setUser(userData);
-    setToken(authToken);
+    if (authToken) {
+      setToken(authToken);
+      localStorage.setItem('auth_token', authToken);
+    }
     localStorage.setItem('auth_user', JSON.stringify(userData));
-    localStorage.setItem('auth_token', authToken);
   };
 
   const logout = () => {

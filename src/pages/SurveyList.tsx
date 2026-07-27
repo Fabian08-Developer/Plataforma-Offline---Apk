@@ -36,10 +36,10 @@ export default function SurveyList() {
 
   return (
     <div className="page-view container" style={{ paddingTop: '2rem' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <div>
-          <h1 className="app-title" style={{ fontSize: '2rem' }}>Mis Encuestas</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Bienvenido, {user?.nombre}</p>
+      <header className="app-header" style={{ marginBottom: '2rem', borderRadius: 'var(--radius-lg)' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 className="app-title truncate-text" style={{ fontSize: '1.75rem', margin: 0 }}>Mis Encuestas</h1>
+          <p className="truncate-text" style={{ color: 'var(--text-muted)', margin: 0 }}>Bienvenido, {user?.nombre}</p>
         </div>
         <button onClick={handleLogout} className="btn btn-icon btn-outline" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }} title="Cerrar sesión">
           <LogOut size={20} />
@@ -58,8 +58,8 @@ export default function SurveyList() {
         <div className="survey-list">
           {surveys.map(survey => (
             <div key={survey.id} className="glass-container survey-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{survey.nombres} {survey.apellidos}</h3>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', gap: '0.5rem' }}>
+                <h3 className="truncate-text" style={{ margin: 0, fontSize: '1.1rem', flex: 1, minWidth: '150px' }}>{survey.nombres} {survey.apellidos}</h3>
                 <span className={`badge ${survey.estado_sincronizacion === 'pendiente' ? 'badge-pending' : 'badge-sync'}`}>
                   {survey.estado_sincronizacion === 'pendiente' ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -81,7 +81,7 @@ export default function SurveyList() {
                   <Phone size={16} /> <span>{survey.telefono_1}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <MapPin size={16} /> <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{survey.direccion}</span>
+                  <MapPin size={16} style={{ flexShrink: 0 }} /> <span className="truncate-text">{survey.direccion}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Calendar size={16} /> <span>{survey.fecha_registro}</span>

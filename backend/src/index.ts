@@ -3,6 +3,9 @@ import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -19,6 +22,28 @@ const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambiar_en
 app.use(cors());
 app.use(express.json());
 
+// Servir la carpeta public estáticamente
+const publicPath = path.join(__dirname, '..', 'public');
+if (!fs.existsSync(publicPath)) {
+  fs.mkdirSync(publicPath, { recursive: true });
+}
+app.use(express.static(publicPath));
+
+// Configuración de Multer para la subida de APK
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const apkDir = path.join(publicPath, 'apk');
+    if (!fs.existsSync(apkDir)) {
+      fs.mkdirSync(apkDir, { recursive: true });
+    }
+    cb(null, apkDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `app-${Date.now()}.apk`);
+  }
+});
+const upload = multer({ storage });
+
 // --- Auth Middleware ---
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
@@ -34,6 +59,33 @@ const authenticateToken = (req: any, res: any, next: any) => {
 };
 
 // --- Rutas Públicas ---
+app.get('/api/version', async (req, res) => {
+  try {
+    const ultimaVersion = await prisma.appVersion.findFirst({
+      orderBy: { id: 'desc' }
+    });
+    
+    if (!ultimaVersion) {
+      return res.json({ 
+        version_minima: '1.0.0', 
+        url_descarga: '', 
+        descripcion: 'Sin versiones registradas', 
+        esObligatorio: false 
+      });
+    }
+
+    const host = req.protocol + '://' + req.get('host');
+    res.json({ 
+      version_minima: ultimaVersion.version, 
+      url_descarga: `${host}${ultimaVersion.urlApk}`,
+      descripcion: ultimaVersion.descripcion,
+      esObligatorio: ultimaVersion.esObligatorio
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al consultar la versión' });
+  }
+});
+
 app.post('/api/login', async (req, res) => {
   const { usuario, password } = req.body;
 
@@ -68,7 +120,6 @@ app.post('/api/login', async (req, res) => {
 
 // --- Rutas Protegidas (Requieren Token) ---
 
-// Sincronizar encuestas desde la app (Recibe un array de encuestas pendientes)
 app.post('/api/sync', authenticateToken, async (req: any, res: any) => {
   const { encuestas } = req.body;
   const encuestadorId = req.user.id;
@@ -81,7 +132,6 @@ app.post('/api/sync', authenticateToken, async (req: any, res: any) => {
     const encuestasCreadas = [];
 
     for (const data of encuestas) {
-      // Usar upsert o chequear existencia por documento_identidad para evitar duplicados
       const existe = await prisma.encuesta.findFirst({
         where: { documento_identidad: data.documento_identidad }
       });
@@ -137,6 +187,33 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
     res.json({ totalEncuestas, totalEncuestadores, ultimas });
   } catch (error) {
     res.status(500).json({ error: 'Error obteniendo métricas' });
+  }
+});
+
+// --- Ruta para subir nueva versión (Solo admin) ---
+app.post('/api/version', authenticateToken, requireAdmin, upload.single('apkFile'), async (req: any, res: any) => {
+  try {
+    const { version, descripcion, esObligatorio } = req.body;
+    
+    if (!version || !req.file) {
+      return res.status(400).json({ error: 'La versión y el archivo APK son obligatorios' });
+    }
+
+    const urlApk = `/apk/${req.file.filename}`;
+    
+    const nuevaVersion = await prisma.appVersion.create({
+      data: {
+        version,
+        descripcion: descripcion || '',
+        esObligatorio: esObligatorio === 'true' || esObligatorio === true,
+        urlApk
+      }
+    });
+
+    res.json({ message: 'Versión publicada con éxito', version: nuevaVersion });
+  } catch (error) {
+    console.error('Error al subir versión:', error);
+    res.status(500).json({ error: 'Error al procesar la subida' });
   }
 });
 

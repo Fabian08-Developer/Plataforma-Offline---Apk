@@ -56,9 +56,8 @@ class DatabaseService {
 
       await this.db.open();
 
-      // Reset para pruebas
-      await this.db.execute('DROP TABLE IF EXISTS encuestas;');
-      await this.db.execute('DROP TABLE IF EXISTS usuarios;');
+      // Eliminado el DROP TABLE de pruebas para que los datos persistan
+
 
       const schemaUsuarios = `
         CREATE TABLE IF NOT EXISTS usuarios (
@@ -73,8 +72,8 @@ class DatabaseService {
 
       const usersCount = await this.db.query('SELECT COUNT(*) as count FROM usuarios');
       if (usersCount.values && usersCount.values[0].count === 0) {
+        // Solo insertamos el admin por defecto
         await this.db.run("INSERT INTO usuarios (nombre, usuario, password, rol) VALUES ('Administrador General', 'admin', '123456', 'admin')");
-        await this.db.run("INSERT INTO usuarios (nombre, usuario, password, rol) VALUES ('Juan Encuestador', 'encuestador', '123456', 'encuestador')");
       }
 
       const schema = `

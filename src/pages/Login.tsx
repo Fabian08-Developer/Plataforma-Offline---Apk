@@ -48,7 +48,7 @@ export default function Login() {
       minHeight: '100vh',
       padding: '2rem'
     }}>
-      <div className="glass-container" style={{ width: '100%', maxWidth: '400px', padding: '2.5rem 2rem' }}>
+      <div className="glass-container" style={{ width: '100%', maxWidth: '400px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <div style={{ 
             display: 'inline-flex', 

@@ -31,6 +31,15 @@ model Encuesta {
   direccion             String
   profesion             String?
   fecha_registro        String
-  estado_sincronizacion String
+  estado_sincronizacion String   @default("sincronizado")
   sincronizado_en       DateTime @default(now())
+}
+
+model AppVersion {
+  id             Int      @id @default(autoincrement())
+  version        String
+  esObligatorio  Boolean  @default(false)
+  descripcion    String
+  urlApk         String
+  creado_en      DateTime @default(now())
 }

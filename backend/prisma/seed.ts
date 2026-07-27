@@ -23,18 +23,7 @@ async function main() {
     }
   });
 
-  const encuestador = await prisma.usuario.upsert({
-    where: { usuario: 'encuestador' },
-    update: {},
-    create: {
-      nombre: 'Juan Encuestador',
-      usuario: 'encuestador',
-      password: hash,
-      rol: 'encuestador'
-    }
-  });
-
-  console.log('Usuarios de prueba creados:', { admin, encuestador });
+  console.log('Usuario admin de prueba creado:', { admin });
 }
 
 main()
