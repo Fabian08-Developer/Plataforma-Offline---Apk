@@ -22,12 +22,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambiar_en
 app.use(cors());
 app.use(express.json());
 
-// Servir la carpeta public estáticamente
+// Servir la carpeta public estáticamente (tanto en / como en /api/apk)
 const publicPath = path.join(__dirname, '..', 'public');
 if (!fs.existsSync(publicPath)) {
   fs.mkdirSync(publicPath, { recursive: true });
 }
 app.use(express.static(publicPath));
+app.use('/api/apk', express.static(path.join(publicPath, 'apk')));
+app.use('/api/public', express.static(publicPath));
 
 // Configuración de Multer para la subida de APK
 const storage = multer.diskStorage({
@@ -62,6 +64,30 @@ const authenticateToken = (req: any, res: any, next: any) => {
 };
 
 // --- Rutas Públicas ---
+
+// Ruta de descarga directa del APK más reciente
+app.get('/api/version/download', async (req, res) => {
+  try {
+    const ultimaVersion = await prisma.appVersion.findFirst({
+      orderBy: { id: 'desc' }
+    });
+    
+    if (!ultimaVersion) {
+      return res.status(404).json({ error: 'No hay versiones disponibles' });
+    }
+
+    const filename = path.basename(ultimaVersion.urlApk);
+    const filePath = path.join(publicPath, 'apk', filename);
+    if (fs.existsSync(filePath)) {
+      res.download(filePath, `app-v${ultimaVersion.version}.apk`);
+    } else {
+      res.status(404).json({ error: 'Archivo APK no encontrado' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Error al descargar el APK' });
+  }
+});
+
 app.get('/api/version', async (req, res) => {
   try {
     const ultimaVersion = await prisma.appVersion.findFirst({
@@ -78,36 +104,16 @@ app.get('/api/version', async (req, res) => {
     }
 
     const host = req.protocol + '://' + req.get('host');
+    const downloadUrl = `${host}/api/version/download`;
+
     res.json({ 
       version_minima: ultimaVersion.version, 
-      url_descarga: `${host}${ultimaVersion.urlApk}`,
+      url_descarga: downloadUrl,
       descripcion: ultimaVersion.descripcion,
       esObligatorio: ultimaVersion.esObligatorio
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al consultar la versión' });
-  }
-});
-
-// Ruta de descarga directa del APK más reciente
-app.get('/api/version/download', async (req, res) => {
-  try {
-    const ultimaVersion = await prisma.appVersion.findFirst({
-      orderBy: { id: 'desc' }
-    });
-    
-    if (!ultimaVersion) {
-      return res.status(404).json({ error: 'No hay versiones disponibles' });
-    }
-
-    const filePath = path.join(publicPath, ultimaVersion.urlApk);
-    if (fs.existsSync(filePath)) {
-      res.download(filePath, `app-v${ultimaVersion.version}.apk`);
-    } else {
-      res.status(404).json({ error: 'Archivo APK no encontrado' });
-    }
-  } catch (error) {
-    res.status(500).json({ error: 'Error al descargar el APK' });
   }
 });
 
