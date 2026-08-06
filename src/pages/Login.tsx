@@ -183,28 +183,26 @@ export default function Login() {
         </form>
       </div>
 
-      {apkUrl && (
-        <div style={{ marginTop: '3rem', textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
-            ¿Eres encuestador de campo?
-          </p>
-          <a 
-            href={apkUrl} 
-            download 
-            className="btn btn-outline" 
-            style={{ 
-              background: 'rgba(255, 255, 255, 0.1)', 
-              border: '1px solid var(--border)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}
-          >
-            <Download size={18} />
-            Descargar App para Android (APK)
-          </a>
-        </div>
-      )}
+      <div style={{ marginTop: '3rem', textAlign: 'center' }}>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
+          ¿Eres encuestador de campo?
+        </p>
+        <a 
+          href={apkUrl || `${BACKEND_URL}/api/version/download`} 
+          download 
+          className="btn btn-outline" 
+          style={{ 
+            background: 'rgba(255, 255, 255, 0.1)', 
+            border: '1px solid var(--border)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <Download size={18} />
+          Descargar App para Android (APK)
+        </a>
+      </div>
     </div>
   );
 }

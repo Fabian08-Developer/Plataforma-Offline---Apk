@@ -89,6 +89,28 @@ app.get('/api/version', async (req, res) => {
   }
 });
 
+// Ruta de descarga directa del APK más reciente
+app.get('/api/version/download', async (req, res) => {
+  try {
+    const ultimaVersion = await prisma.appVersion.findFirst({
+      orderBy: { id: 'desc' }
+    });
+    
+    if (!ultimaVersion) {
+      return res.status(404).json({ error: 'No hay versiones disponibles' });
+    }
+
+    const filePath = path.join(publicPath, ultimaVersion.urlApk);
+    if (fs.existsSync(filePath)) {
+      res.download(filePath, `app-v${ultimaVersion.version}.apk`);
+    } else {
+      res.status(404).json({ error: 'Archivo APK no encontrado' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Error al descargar el APK' });
+  }
+});
+
 app.post('/api/login', async (req, res) => {
   const { usuario, password } = req.body;
 
