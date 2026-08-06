@@ -42,7 +42,10 @@ const storage = multer.diskStorage({
     cb(null, `app-${Date.now()}.apk`);
   }
 });
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 } // 100 MB max
+});
 
 // --- Auth Middleware ---
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -191,10 +194,21 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
 });
 
 // --- Ruta para subir nueva versión (Solo admin) ---
-app.post('/api/version', authenticateToken, requireAdmin, upload.single('apkFile'), async (req: any, res: any) => {
+app.post('/api/version', authenticateToken, requireAdmin, (req: any, res: any, next: any) => {
+  upload.single('apkFile')(req, res, (err: any) => {
+    if (err) {
+      console.error('Error de Multer al subir archivo:', err);
+      return res.status(400).json({ error: `Error al subir el archivo: ${err.message}` });
+    }
+    next();
+  });
+}, async (req: any, res: any) => {
   try {
     const { version, descripcion, esObligatorio } = req.body;
     
+    console.log('POST /api/version - body:', { version, descripcion, esObligatorio });
+    console.log('POST /api/version - file:', req.file ? { filename: req.file.filename, size: req.file.size } : 'NO FILE');
+
     if (!version || !req.file) {
       return res.status(400).json({ error: 'La versión y el archivo APK son obligatorios' });
     }
@@ -210,10 +224,11 @@ app.post('/api/version', authenticateToken, requireAdmin, upload.single('apkFile
       }
     });
 
+    console.log('Versión creada exitosamente:', nuevaVersion.id);
     res.json({ message: 'Versión publicada con éxito', version: nuevaVersion });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error al subir versión:', error);
-    res.status(500).json({ error: 'Error al procesar la subida' });
+    res.status(500).json({ error: `Error al procesar la subida: ${error.message}` });
   }
 });
 

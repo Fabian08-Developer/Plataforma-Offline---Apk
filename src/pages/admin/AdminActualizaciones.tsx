@@ -28,6 +28,9 @@ export default function AdminActualizaciones() {
       formData.append('descripcion', descripcion);
       formData.append('esObligatorio', String(esObligatorio));
 
+      console.log('Enviando a:', `${BACKEND_URL}/api/version`);
+      console.log('Token:', token ? 'presente' : 'FALTA');
+      
       const res = await fetch(`${BACKEND_URL}/api/version`, {
         method: 'POST',
         headers: {
@@ -36,7 +39,13 @@ export default function AdminActualizaciones() {
         body: formData
       });
 
-      if (!res.ok) throw new Error('Error al publicar la actualización');
+      const data = await res.json().catch(() => null);
+      console.log('Respuesta del servidor:', res.status, data);
+
+      if (!res.ok) {
+        const serverMsg = data?.error || `Error HTTP ${res.status}`;
+        throw new Error(serverMsg);
+      }
       
       alert('¡Actualización publicada con éxito!');
       setFile(null);
@@ -45,9 +54,9 @@ export default function AdminActualizaciones() {
       setEsObligatorio(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
 
-    } catch (err) {
-      console.error(err);
-      alert('Hubo un error al publicar la actualización.');
+    } catch (err: any) {
+      console.error('Error completo:', err);
+      alert(`Error al publicar: ${err.message}`);
     } finally {
       setLoading(false);
     }

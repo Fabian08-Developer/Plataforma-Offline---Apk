@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { dbService } from '../db';
+import { BACKEND_URL } from '../config';
 import { LogIn, Download, Lock, User, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
@@ -10,9 +11,22 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [apkUrl, setApkUrl] = useState<string | null>(null);
   
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  // Obtener la URL de descarga más reciente del backend
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/version`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.url_descarga) {
+          setApkUrl(data.url_descarga);
+        }
+      })
+      .catch(() => console.log('No se pudo obtener la versión del APK'));
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,16 +34,44 @@ export default function Login() {
     setLoading(true);
 
     try {
+      // Autenticación local (SQLite)
       const user = await dbService.getUserByCredentials(usuario, password);
-      if (user) {
-        login(user);
-        if (user.rol === 'admin') {
-          navigate('/admin');
-        } else {
-          navigate('/');
+      if (!user) {
+        setError('Usuario o contraseña incorrectos.');
+        return;
+      }
+
+      // Para admins, también autenticamos contra el backend para obtener el JWT
+      if (user.rol === 'admin') {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuario, password })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            login(user, data.token);
+          } else {
+            // Si el backend no está disponible, login sin token (funcionalidades offline)
+            console.warn('No se pudo obtener token del backend. Funciones online limitadas.');
+            login(user);
+          }
+        } catch (backendErr) {
+          // Backend no disponible - login offline
+          console.warn('Backend no disponible:', backendErr);
+          login(user);
         }
       } else {
-        setError('Usuario o contraseña incorrectos.');
+        // Encuestadores: solo login local (trabajan offline)
+        login(user);
+      }
+
+      if (user.rol === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/');
       }
     } catch (err) {
       console.error('Error al iniciar sesión:', err);
@@ -141,26 +183,28 @@ export default function Login() {
         </form>
       </div>
 
-      <div style={{ marginTop: '3rem', textAlign: 'center' }}>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
-          ¿Eres encuestador de campo?
-        </p>
-        <a 
-          href="/app-debug.apk" 
-          download 
-          className="btn btn-outline" 
-          style={{ 
-            background: 'rgba(255, 255, 255, 0.1)', 
-            border: '1px solid var(--border)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <Download size={18} />
-          Descargar App para Android (APK)
-        </a>
-      </div>
+      {apkUrl && (
+        <div style={{ marginTop: '3rem', textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
+            ¿Eres encuestador de campo?
+          </p>
+          <a 
+            href={apkUrl} 
+            download 
+            className="btn btn-outline" 
+            style={{ 
+              background: 'rgba(255, 255, 255, 0.1)', 
+              border: '1px solid var(--border)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}
+          >
+            <Download size={18} />
+            Descargar App para Android (APK)
+          </a>
+        </div>
+      )}
     </div>
   );
 }
