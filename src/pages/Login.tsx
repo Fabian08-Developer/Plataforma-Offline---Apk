@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { dbService } from '../db';
@@ -11,22 +11,8 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [apkUrl, setApkUrl] = useState<string | null>(null);
-  
   const { login } = useAuth();
   const navigate = useNavigate();
-
-  // Obtener la URL de descarga más reciente del backend
-  useEffect(() => {
-    fetch(`${BACKEND_URL}/api/version`)
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (data?.url_descarga) {
-          setApkUrl(data.url_descarga);
-        }
-      })
-      .catch(() => console.log('No se pudo obtener la versión del APK'));
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,8 +174,7 @@ export default function Login() {
           ¿Eres encuestador de campo?
         </p>
         <a 
-          href={apkUrl || `${BACKEND_URL}/api/version/download`} 
-          download 
+          href={`${BACKEND_URL}/api/version/download`} 
           className="btn btn-outline" 
           style={{ 
             background: 'rgba(255, 255, 255, 0.1)', 
