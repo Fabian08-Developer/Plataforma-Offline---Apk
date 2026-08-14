@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { dbService } from '../db';
@@ -11,8 +11,20 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState(`${BACKEND_URL}/api/version/download`);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/version`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.url_descarga) {
+          setDownloadUrl(data.url_descarga);
+        }
+      })
+      .catch((err) => console.warn('Error al obtener URL de descarga:', err));
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,7 +186,7 @@ export default function Login() {
           ¿Eres encuestador de campo?
         </p>
         <a 
-          href={`${BACKEND_URL}/api/version/download`} 
+          href={downloadUrl} 
           className="btn btn-outline" 
           style={{ 
             background: 'rgba(255, 255, 255, 0.1)', 
