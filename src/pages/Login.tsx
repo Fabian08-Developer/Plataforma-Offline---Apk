@@ -20,7 +20,12 @@ export default function Login() {
       .then(res => res.json())
       .then(data => {
         if (data && data.url_descarga) {
-          setDownloadUrl(data.url_descarga);
+          let url = data.url_descarga;
+          // Si la URL generada en versiones antiguas no tenía el prefijo /api/
+          if (url.includes('/apk/') && !url.includes('/api/apk/')) {
+            url = url.replace('/apk/', '/api/apk/');
+          }
+          setDownloadUrl(url);
         }
       })
       .catch((err) => console.warn('Error al obtener URL de descarga:', err));

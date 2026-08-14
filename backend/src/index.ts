@@ -19,6 +19,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_cambiar_en_produccion';
 
+app.set('trust proxy', true);
 app.use(cors());
 app.use(express.json());
 
