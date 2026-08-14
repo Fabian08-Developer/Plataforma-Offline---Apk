@@ -23,13 +23,14 @@ app.set('trust proxy', true);
 app.use(cors());
 app.use(express.json());
 
-// Servir la carpeta public estáticamente (tanto en / como en /api/apk)
+// Servir la carpeta public estáticamente (tanto en /, /apk, /api/apk como /api/public)
 const publicPath = path.join(__dirname, '..', 'public');
 if (!fs.existsSync(publicPath)) {
   fs.mkdirSync(publicPath, { recursive: true });
 }
 app.use(express.static(publicPath));
 app.use('/api/apk', express.static(path.join(publicPath, 'apk')));
+app.use('/apk', express.static(path.join(publicPath, 'apk')));
 app.use('/api/public', express.static(publicPath));
 
 // Configuración de Multer para la subida de APK
@@ -66,8 +67,8 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
 // --- Rutas Públicas ---
 
-// Ruta de descarga directa del APK más reciente
-app.get('/api/version/download', async (req, res) => {
+// Ruta de descarga directa del APK más reciente (Soporta /api/version/download y /version/download)
+const handleDownload = async (req: express.Request, res: express.Response) => {
   try {
     const ultimaVersion = await prisma.appVersion.findFirst({
       orderBy: { id: 'desc' }
@@ -82,14 +83,16 @@ app.get('/api/version/download', async (req, res) => {
     if (fs.existsSync(filePath)) {
       res.download(filePath, `app-v${ultimaVersion.version}.apk`);
     } else {
-      res.status(404).json({ error: 'Archivo APK no encontrado' });
+      res.status(404).json({ error: 'Archivo APK no encontrado en el servidor' });
     }
   } catch (error) {
     res.status(500).json({ error: 'Error al descargar el APK' });
   }
-});
+};
 
-app.get('/api/version', async (req, res) => {
+app.get(['/api/version/download', '/version/download'], handleDownload);
+
+const handleVersionInfo = async (req: express.Request, res: express.Response) => {
   try {
     const ultimaVersion = await prisma.appVersion.findFirst({
       orderBy: { id: 'desc' }
@@ -116,7 +119,9 @@ app.get('/api/version', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Error al consultar la versión' });
   }
-});
+};
+
+app.get(['/api/version', '/version'], handleVersionInfo);
 
 app.post('/api/login', async (req, res) => {
   const { usuario, password } = req.body;
@@ -223,7 +228,7 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
 });
 
 // --- Ruta para subir nueva versión (Solo admin) ---
-app.post('/api/version', authenticateToken, requireAdmin, (req: any, res: any, next: any) => {
+app.post(['/api/version', '/version'], authenticateToken, requireAdmin, (req: any, res: any, next: any) => {
   upload.single('apkFile')(req, res, (err: any) => {
     if (err) {
       console.error('Error de Multer al subir archivo:', err);
