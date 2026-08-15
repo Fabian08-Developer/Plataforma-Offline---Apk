@@ -226,11 +226,20 @@ const handleSync = async (req: any, res: any) => {
   }
 };
 
-// Sincronización acepta petición autenticada o directa desde dispositivos encuestadores
+// Sincronización acepta petición autenticada o directa desde dispositivos encuestadores sin bloquear si el token expiró
 app.post(['/api/sync', '/sync'], (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
   if (authHeader) {
-    return authenticateToken(req, res, next);
+    const token = authHeader.split(' ')[1];
+    if (token) {
+      jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+        if (!err && user) {
+          req.user = user;
+        }
+        next();
+      });
+      return;
+    }
   }
   next();
 }, handleSync);
