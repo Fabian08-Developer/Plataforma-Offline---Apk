@@ -159,7 +159,7 @@ app.post('/api/login', async (req, res) => {
 
 const handleSync = async (req: any, res: any) => {
   const { encuestas } = req.body;
-  let encuestadorId = req.user?.id || req.body.encuestador_id || null;
+  let rawEncuestadorId = req.user?.id || req.body.encuestador_id || null;
 
   if (!Array.isArray(encuestas) || encuestas.length === 0) {
     return res.status(400).json({ error: 'Formato inválido o no hay encuestas para sincronizar' });
@@ -168,26 +168,43 @@ const handleSync = async (req: any, res: any) => {
   try {
     const encuestasProcesadasIds = [];
 
+    // Buscar primer usuario de respaldo (por si encuestador_id local no existe en el VPS)
+    const usuarioRespaldo = await prisma.usuario.findFirst({ orderBy: { id: 'asc' } });
+    const defaultUserId = usuarioRespaldo ? usuarioRespaldo.id : 1;
+
     for (const data of encuestas) {
-      // Buscar si ya existe por documento de identidad
+      if (!data.documento_identidad) continue;
+
+      // Buscar si la encuesta ya fue sincronizada previamente
       const existe = await prisma.encuesta.findFirst({
-        where: { documento_identidad: data.documento_identidad }
+        where: { documento_identidad: String(data.documento_identidad) }
       });
 
       if (!existe) {
+        // Validar que el encuestador_id exista en la tabla Usuario de PostgreSQL
+        let targetUserId = rawEncuestadorId || data.encuestador_id;
+        if (targetUserId) {
+          const userExists = await prisma.usuario.findUnique({ where: { id: Number(targetUserId) } });
+          if (!userExists) {
+            targetUserId = defaultUserId;
+          }
+        } else {
+          targetUserId = defaultUserId;
+        }
+
         const nueva = await prisma.encuesta.create({
           data: {
-            encuestador_id: encuestadorId || data.encuestador_id || null,
-            tipo_documento: data.tipo_documento,
-            documento_identidad: data.documento_identidad,
-            nombres: data.nombres,
-            apellidos: data.apellidos,
-            telefono_1: data.telefono_1,
-            telefono_2: data.telefono_2 || '',
-            telefono_3: data.telefono_3 || '',
-            direccion: data.direccion,
-            profesion: data.profesion || '',
-            fecha_registro: data.fecha_registro,
+            encuestador_id: Number(targetUserId),
+            tipo_documento: String(data.tipo_documento || 'C.C'),
+            documento_identidad: String(data.documento_identidad),
+            nombres: String(data.nombres || ''),
+            apellidos: String(data.apellidos || ''),
+            telefono_1: String(data.telefono_1 || ''),
+            telefono_2: data.telefono_2 ? String(data.telefono_2) : '',
+            telefono_3: data.telefono_3 ? String(data.telefono_3) : '',
+            direccion: String(data.direccion || ''),
+            profesion: data.profesion ? String(data.profesion) : '',
+            fecha_registro: String(data.fecha_registro || new Date().toISOString().split('T')[0]),
             estado_sincronizacion: 'sincronizado',
           }
         });
@@ -203,9 +220,9 @@ const handleSync = async (req: any, res: any) => {
       procesadas: encuestasProcesadasIds.length,
       sincronizadasLocalIds: encuestasProcesadasIds 
     });
-  } catch (error) {
-    console.error('Error al sincronizar:', error);
-    res.status(500).json({ error: 'Error interno del servidor al procesar las encuestas' });
+  } catch (error: any) {
+    console.error('Error al sincronizar encuestas:', error);
+    res.status(500).json({ error: `Error interno del servidor al procesar las encuestas: ${error.message}` });
   }
 };
 
