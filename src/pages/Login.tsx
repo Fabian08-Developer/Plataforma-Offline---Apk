@@ -37,15 +37,8 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // Autenticación local (SQLite)
-      const user = await dbService.getUserByCredentials(usuario, password);
-      if (!user) {
-        setError('Usuario o contraseña incorrectos.');
-        return;
-      }
-
-      // Para admins, también autenticamos contra el backend para obtener el JWT
-      if (user.rol === 'admin') {
+      // 1. Intentar autenticar primero con el backend VPS si estamos online
+      if (navigator.onLine) {
         try {
           const res = await fetch(`${BACKEND_URL}/api/login`, {
             method: 'POST',
@@ -55,30 +48,39 @@ export default function Login() {
 
           if (res.ok) {
             const data = await res.json();
-            login(user, data.token);
-          } else {
-            // Si el backend no está disponible, login sin token (funcionalidades offline)
-            console.warn('No se pudo obtener token del backend. Funciones online limitadas.');
-            login(user);
+            // Asegurar que el usuario exista en la base de datos local SQLite
+            let localUser = await dbService.getUserByCredentials(usuario);
+            if (!localUser) {
+              await dbService.addUsuario({
+                nombre: data.user.nombre,
+                usuario: data.user.usuario,
+                password: password,
+                rol: data.user.rol
+              });
+              localUser = await dbService.getUserByCredentials(usuario);
+            }
+            
+            login(localUser || data.user, data.token);
+            navigate(data.user.rol === 'admin' ? '/admin' : '/');
+            return;
           }
         } catch (backendErr) {
-          // Backend no disponible - login offline
-          console.warn('Backend no disponible:', backendErr);
-          login(user);
+          console.warn('Backend login fallback a SQLite local:', backendErr);
         }
-      } else {
-        // Encuestadores: solo login local (trabajan offline)
-        login(user);
       }
 
-      if (user.rol === 'admin') {
-        navigate('/admin');
-      } else {
-        navigate('/');
+      // 2. Fallback offline: Autenticación local con SQLite
+      const user = await dbService.getUserByCredentials(usuario, password);
+      if (!user) {
+        setError('Usuario o contraseña incorrectos.');
+        return;
       }
+
+      login(user);
+      navigate(user.rol === 'admin' ? '/admin' : '/');
     } catch (err) {
       console.error('Error al iniciar sesión:', err);
-      setError('Error al conectar con la base de datos local.');
+      setError('Error al conectar con la base de datos.');
     } finally {
       setLoading(false);
     }

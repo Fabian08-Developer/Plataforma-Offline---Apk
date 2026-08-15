@@ -123,17 +123,35 @@ const handleVersionInfo = async (req: express.Request, res: express.Response) =>
 
 app.get(['/api/version', '/version'], handleVersionInfo);
 
-app.post('/api/login', async (req, res) => {
+app.post(['/api/login', '/login'], async (req: any, res: any) => {
   const { usuario, password } = req.body;
 
   try {
-    const user = await prisma.usuario.findUnique({ where: { usuario } });
+    let user = await prisma.usuario.findUnique({ where: { usuario } });
     
+    // Si no existe el usuario admin por defecto en PostgreSQL, lo creamos automáticamente
+    if (!user && usuario === 'admin') {
+      const hashedPassword = await bcrypt.hash(password || '123456', 10);
+      user = await prisma.usuario.create({
+        data: {
+          nombre: 'Administrador General',
+          usuario: 'admin',
+          password: hashedPassword,
+          rol: 'admin',
+          estado: true
+        }
+      });
+    }
+
     if (!user) {
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
     }
 
-    const validPassword = await bcrypt.compare(password, user.password);
+    let validPassword = await bcrypt.compare(password, user.password).catch(() => false);
+    if (!validPassword && password === user.password) {
+      validPassword = true;
+    }
+
     if (!validPassword) {
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
     }
@@ -145,12 +163,12 @@ app.post('/api/login', async (req, res) => {
     const token = jwt.sign(
       { id: user.id, usuario: user.usuario, rol: user.rol, nombre: user.nombre }, 
       JWT_SECRET, 
-      { expiresIn: '24h' }
+      { expiresIn: '30d' }
     );
 
     res.json({ token, user: { id: user.id, usuario: user.usuario, rol: user.rol, nombre: user.nombre } });
   } catch (error) {
-    console.error(error);
+    console.error('Error en login backend:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
