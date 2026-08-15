@@ -45,19 +45,37 @@ export default function SyncService() {
       const pendingSurveys = await dbService.getPendingSurveys();
       
       if (pendingSurveys.length > 0) {
-        console.log(`Sincronizando ${pendingSurveys.length} encuestas usando SQLite...`);
+        console.log(`Sincronizando ${pendingSurveys.length} encuestas con el servidor VPS...`);
 
-        // Mock backend sync delay
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        for (const survey of pendingSurveys) {
-          if (survey.id) {
-            await dbService.markAsSynchronized(survey.id);
-          }
+        const token = localStorage.getItem('auth_token');
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
         }
-        
-        console.log('Sincronización completada exitosamente.');
-        window.dispatchEvent(new Event('surveys-updated'));
+
+        const res = await fetch(`${BACKEND_URL}/api/sync`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ encuestas: pendingSurveys })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const idsProcesados = data.sincronizadasLocalIds || pendingSurveys.map(s => s.id).filter(Boolean);
+
+          for (const id of idsProcesados) {
+            if (id) {
+              await dbService.markAsSynchronized(id);
+            }
+          }
+          
+          console.log('Sincronización real completada exitosamente.');
+          window.dispatchEvent(new Event('surveys-updated'));
+        } else {
+          console.warn('El servidor respondió con error al sincronizar:', res.status);
+        }
       }
 
       // --- Revisar actualizaciones de versión después de sincronizar ---

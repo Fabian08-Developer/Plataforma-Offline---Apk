@@ -3,24 +3,64 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../db';
 import type { Survey, User } from '../../db';
+import { BACKEND_URL } from '../../config';
 import { Users, FileText, Wifi, WifiOff, LogOut, DownloadCloud } from 'lucide-react';
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const navigate = useNavigate();
 
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [encuestadores, setEncuestadores] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
+      setLoading(true);
+      try {
+        // Intentar obtener datos globales centralizados del servidor backend
+        if (token) {
+          const res = await fetch(`${BACKEND_URL}/api/admin/stats`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.encuestas) {
+              setSurveys(data.encuestas.map((e: any) => ({
+                id: e.id,
+                tipo_documento: e.tipo_documento,
+                documento_identidad: e.documento_identidad,
+                nombres: e.nombres,
+                apellidos: e.apellidos,
+                telefono_1: e.telefono_1,
+                telefono_2: e.telefono_2,
+                telefono_3: e.telefono_3,
+                direccion: e.direccion,
+                fecha_registro: e.fecha_registro,
+                profesion: e.profesion,
+                estado_sincronizacion: 'sincronizado'
+              })));
+            }
+            const allEncuestadores = await dbService.getAllEncuestadores();
+            setEncuestadores(allEncuestadores);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Backend indisponible para métricas globales, fallback a SQLite local:', err);
+      }
+
+      // Fallback a la base de datos local SQLite si el backend no responde
       const allSurveys = await dbService.getAllSurveys();
       const allEncuestadores = await dbService.getAllEncuestadores();
       setSurveys(allSurveys);
       setEncuestadores(allEncuestadores);
+      setLoading(false);
     }
     loadData();
-  }, []);
+  }, [token]);
 
   const handleLogout = () => {
     logout();
@@ -99,7 +139,11 @@ export default function Dashboard() {
       </div>
 
       <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Últimas Encuestas Globales</h2>
-      {surveys.length === 0 ? (
+      {loading ? (
+        <div className="glass-container" style={{ textAlign: 'center', padding: '3rem' }}>
+          <p style={{ color: 'var(--text-muted)' }}>Cargando encuestas centralizadas...</p>
+        </div>
+      ) : surveys.length === 0 ? (
         <div className="glass-container" style={{ textAlign: 'center', padding: '3rem' }}>
           <p style={{ color: 'var(--text-muted)' }}>No hay encuestas registradas en la base de datos.</p>
         </div>

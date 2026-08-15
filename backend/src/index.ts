@@ -155,20 +155,21 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// --- Rutas Protegidas (Requieren Token) ---
+// --- Rutas Protegidas y Sincronización ---
 
-app.post('/api/sync', authenticateToken, async (req: any, res: any) => {
+const handleSync = async (req: any, res: any) => {
   const { encuestas } = req.body;
-  const encuestadorId = req.user.id;
+  let encuestadorId = req.user?.id || req.body.encuestador_id || null;
 
   if (!Array.isArray(encuestas) || encuestas.length === 0) {
     return res.status(400).json({ error: 'Formato inválido o no hay encuestas para sincronizar' });
   }
 
   try {
-    const encuestasCreadas = [];
+    const encuestasProcesadasIds = [];
 
     for (const data of encuestas) {
+      // Buscar si ya existe por documento de identidad
       const existe = await prisma.encuesta.findFirst({
         where: { documento_identidad: data.documento_identidad }
       });
@@ -176,56 +177,77 @@ app.post('/api/sync', authenticateToken, async (req: any, res: any) => {
       if (!existe) {
         const nueva = await prisma.encuesta.create({
           data: {
-            encuestador_id: encuestadorId,
+            encuestador_id: encuestadorId || data.encuestador_id || null,
             tipo_documento: data.tipo_documento,
             documento_identidad: data.documento_identidad,
             nombres: data.nombres,
             apellidos: data.apellidos,
             telefono_1: data.telefono_1,
-            telefono_2: data.telefono_2,
-            telefono_3: data.telefono_3,
+            telefono_2: data.telefono_2 || '',
+            telefono_3: data.telefono_3 || '',
             direccion: data.direccion,
-            profesion: data.profesion,
+            profesion: data.profesion || '',
             fecha_registro: data.fecha_registro,
             estado_sincronizacion: 'sincronizado',
           }
         });
-        encuestasCreadas.push(nueva.id);
+        encuestasProcesadasIds.push(data.id || nueva.id);
+      } else {
+        // Si ya existía en la nube, marcamos como procesado el ID local
+        encuestasProcesadasIds.push(data.id);
       }
     }
 
-    res.json({ message: 'Sincronización exitosa', procesadas: encuestasCreadas.length });
+    res.json({ 
+      message: 'Sincronización exitosa', 
+      procesadas: encuestasProcesadasIds.length,
+      sincronizadasLocalIds: encuestasProcesadasIds 
+    });
   } catch (error) {
     console.error('Error al sincronizar:', error);
     res.status(500).json({ error: 'Error interno del servidor al procesar las encuestas' });
   }
-});
+};
+
+// Sincronización acepta petición autenticada o directa desde dispositivos encuestadores
+app.post(['/api/sync', '/sync'], (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  if (authHeader) {
+    return authenticateToken(req, res, next);
+  }
+  next();
+}, handleSync);
 
 // --- Rutas de Administrador ---
 const requireAdmin = (req: any, res: any, next: any) => {
-  if (req.user.rol !== 'admin') {
+  if (req.user?.rol !== 'admin') {
     return res.status(403).json({ error: 'Acceso denegado. Se requieren permisos de administrador.' });
   }
   next();
 };
 
-app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+const handleAdminStats = async (req: any, res: any) => {
   try {
     const totalEncuestas = await prisma.encuesta.count();
     const totalEncuestadores = await prisma.usuario.count({ where: { rol: 'encuestador' } });
     
-    // Obtener las 5 encuestas más recientes
-    const ultimas = await prisma.encuesta.findMany({
+    // Obtener todas las encuestas centralizadas
+    const encuestas = await prisma.encuesta.findMany({
       orderBy: { sincronizado_en: 'desc' },
-      take: 5,
-      include: { encuestador: { select: { nombre: true } } }
+      include: { encuestador: { select: { nombre: true, usuario: true } } }
     });
 
-    res.json({ totalEncuestas, totalEncuestadores, ultimas });
+    const ultimas = encuestas.slice(0, 5);
+
+    res.json({ totalEncuestas, totalEncuestadores, ultimas, encuestas });
   } catch (error) {
+    console.error('Error obteniendo métricas admin:', error);
     res.status(500).json({ error: 'Error obteniendo métricas' });
   }
-});
+};
+
+app.get(['/api/admin/stats', '/admin/stats'], authenticateToken, requireAdmin, handleAdminStats);
+app.get(['/api/admin/encuestas', '/admin/encuestas'], authenticateToken, requireAdmin, handleAdminStats);
 
 // --- Ruta para subir nueva versión (Solo admin) ---
 app.post(['/api/version', '/version'], authenticateToken, requireAdmin, (req: any, res: any, next: any) => {
