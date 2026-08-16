@@ -24,16 +24,25 @@ export default function SyncService() {
     window.addEventListener('trigger-sync', syncPendingData);
 
     // Initial check
-    setTimeout(() => {
+    const initialTimer = setTimeout(() => {
       if (navigator.onLine) {
         syncPendingData();
       }
     }, 1000);
 
+    // Periodic check every 20 seconds while online
+    const intervalTimer = setInterval(() => {
+      if (navigator.onLine) {
+        syncPendingData();
+      }
+    }, 20000);
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('trigger-sync', syncPendingData);
+      clearTimeout(initialTimer);
+      clearInterval(intervalTimer);
     };
   }, []);
 

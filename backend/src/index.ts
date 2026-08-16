@@ -186,9 +186,21 @@ const handleSync = async (req: any, res: any) => {
   try {
     const encuestasProcesadasIds = [];
 
-    // Buscar primer usuario de respaldo (por si encuestador_id local no existe en el VPS)
-    const usuarioRespaldo = await prisma.usuario.findFirst({ orderBy: { id: 'asc' } });
-    const defaultUserId = usuarioRespaldo ? usuarioRespaldo.id : 1;
+    // Buscar o crear primer usuario de respaldo (por si encuestador_id local no existe en el VPS)
+    let usuarioRespaldo = await prisma.usuario.findFirst({ orderBy: { id: 'asc' } });
+    if (!usuarioRespaldo) {
+      const defaultPass = await bcrypt.hash('123456', 10);
+      usuarioRespaldo = await prisma.usuario.create({
+        data: {
+          nombre: 'Administrador General',
+          usuario: 'admin',
+          password: defaultPass,
+          rol: 'admin',
+          estado: true
+        }
+      });
+    }
+    const defaultUserId = usuarioRespaldo.id;
 
     for (const data of encuestas) {
       if (!data.documento_identidad) continue;
@@ -269,6 +281,78 @@ const requireAdmin = (req: any, res: any, next: any) => {
   }
   next();
 };
+
+// CRUD de Encuestadores en PostgreSQL
+app.get(['/api/admin/encuestadores', '/admin/encuestadores'], authenticateToken, requireAdmin, async (req: any, res: any) => {
+  try {
+    const encuestadores = await prisma.usuario.findMany({
+      where: { rol: 'encuestador' },
+      select: { id: true, nombre: true, usuario: true, rol: true, estado: true, creado_en: true },
+      orderBy: { nombre: 'asc' }
+    });
+    res.json(encuestadores);
+  } catch (error) {
+    console.error('Error obteniendo encuestadores:', error);
+    res.status(500).json({ error: 'Error al obtener encuestadores' });
+  }
+});
+
+app.post(['/api/admin/encuestadores', '/admin/encuestadores'], authenticateToken, requireAdmin, async (req: any, res: any) => {
+  try {
+    const { nombre, usuario, password } = req.body;
+    if (!nombre || !usuario) {
+      return res.status(400).json({ error: 'Nombre y usuario son obligatorios' });
+    }
+    const existe = await prisma.usuario.findUnique({ where: { usuario } });
+    if (existe) {
+      return res.status(400).json({ error: 'El nombre de usuario ya está registrado' });
+    }
+    const hashedPassword = await bcrypt.hash(password || '123456', 10);
+    const nuevo = await prisma.usuario.create({
+      data: {
+        nombre,
+        usuario,
+        password: hashedPassword,
+        rol: 'encuestador',
+        estado: true
+      }
+    });
+    res.json({ message: 'Encuestador creado con éxito', usuario: nuevo });
+  } catch (error: any) {
+    console.error('Error creando encuestador:', error);
+    res.status(500).json({ error: error.message || 'Error al crear encuestador' });
+  }
+});
+
+app.put(['/api/admin/encuestadores/:id', '/admin/encuestadores/:id'], authenticateToken, requireAdmin, async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id);
+    const { nombre, usuario, password } = req.body;
+    const updateData: any = { nombre, usuario };
+    if (password) {
+      updateData.password = await bcrypt.hash(password, 10);
+    }
+    const actualizado = await prisma.usuario.update({
+      where: { id },
+      data: updateData
+    });
+    res.json({ message: 'Encuestador actualizado con éxito', usuario: actualizado });
+  } catch (error: any) {
+    console.error('Error actualizando encuestador:', error);
+    res.status(500).json({ error: error.message || 'Error al actualizar encuestador' });
+  }
+});
+
+app.delete(['/api/admin/encuestadores/:id', '/admin/encuestadores/:id'], authenticateToken, requireAdmin, async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id);
+    await prisma.usuario.delete({ where: { id } });
+    res.json({ message: 'Encuestador eliminado con éxito' });
+  } catch (error: any) {
+    console.error('Error eliminando encuestador:', error);
+    res.status(500).json({ error: error.message || 'Error al eliminar encuestador' });
+  }
+});
 
 const handleAdminStats = async (req: any, res: any) => {
   try {

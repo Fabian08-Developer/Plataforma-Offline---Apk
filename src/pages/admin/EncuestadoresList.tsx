@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { dbService } from '../../db';
 import type { User } from '../../db';
+import { BACKEND_URL } from '../../config';
 import { ArrowLeft, UserPlus, Trash2, Edit2, ChevronRight, Save, X } from 'lucide-react';
 
 export default function EncuestadoresList() {
@@ -15,6 +16,33 @@ export default function EncuestadoresList() {
 
   const loadEncuestadores = async () => {
     setLoading(true);
+    try {
+      // 1. Intentar cargar desde el backend si estamos online
+      if (navigator.onLine) {
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch(`${BACKEND_URL}/api/admin/encuestadores`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const remoteUsers: User[] = await res.json();
+          // Sincronizar en SQLite local
+          for (const u of remoteUsers) {
+            const localU = await dbService.getUserByCredentials(u.usuario);
+            if (!localU) {
+              await dbService.addUsuario({
+                nombre: u.nombre,
+                usuario: u.usuario,
+                password: 'password_vps',
+                rol: 'encuestador'
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Fallback a encuestadores locales de SQLite:', err);
+    }
+
     const data = await dbService.getAllEncuestadores();
     setEncuestadores(data);
     setLoading(false);
@@ -34,6 +62,28 @@ export default function EncuestadoresList() {
     };
 
     try {
+      // Enviar al backend si estamos online
+      if (navigator.onLine) {
+        const token = localStorage.getItem('auth_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        if (editingId) {
+          await fetch(`${BACKEND_URL}/api/admin/encuestadores/${editingId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(newUser)
+          }).catch(console.warn);
+        } else {
+          await fetch(`${BACKEND_URL}/api/admin/encuestadores`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(newUser)
+          }).catch(console.warn);
+        }
+      }
+
+      // Guardar en SQLite local
       if (editingId) {
         await dbService.updateUsuario(editingId, newUser);
       } else {
@@ -57,6 +107,13 @@ export default function EncuestadoresList() {
 
   const handleDelete = async (id: number) => {
     if (confirm('¿Estás seguro de eliminar este encuestador?')) {
+      if (navigator.onLine) {
+        const token = localStorage.getItem('auth_token');
+        await fetch(`${BACKEND_URL}/api/admin/encuestadores/${id}`, {
+          method: 'DELETE',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }).catch(console.warn);
+      }
       await dbService.deleteUsuario(id);
       loadEncuestadores();
     }
