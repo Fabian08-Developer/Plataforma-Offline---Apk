@@ -73,11 +73,11 @@ const requireAdmin = (req: any, res: any, next: any) => {
 };
 
 // ════════════════════════════════════════════════════════════════════════════════
-//  RUTAS PÚBLICAS
+//  CONTROLADORES
 // ════════════════════════════════════════════════════════════════════════════════
 
 // Descarga APK
-app.get('/api/version/download', async (_req: express.Request, res: express.Response) => {
+const handleDownload = async (_req: express.Request, res: express.Response) => {
   try {
     const ultima = await prisma.appVersion.findFirst({ orderBy: { id: 'desc' } });
     if (!ultima) return res.status(404).json({ error: 'No hay versiones disponibles' });
@@ -86,20 +86,20 @@ app.get('/api/version/download', async (_req: express.Request, res: express.Resp
     if (fs.existsSync(filePath)) res.download(filePath, `app-v${ultima.version}.apk`);
     else res.status(404).json({ error: 'Archivo APK no encontrado' });
   } catch { res.status(500).json({ error: 'Error al descargar el APK' }); }
-});
+};
 
 // Info de versión
-app.get('/api/version', async (req: express.Request, res: express.Response) => {
+const handleVersionInfo = async (req: express.Request, res: express.Response) => {
   try {
     const ultima = await prisma.appVersion.findFirst({ orderBy: { id: 'desc' } });
     if (!ultima) return res.json({ version_minima: '1.0.0', url_descarga: '', descripcion: 'Sin versiones registradas', esObligatorio: false });
     const host = req.protocol + '://' + req.get('host');
     res.json({ version_minima: ultima.version, url_descarga: `${host}/api/version/download`, descripcion: ultima.descripcion, esObligatorio: ultima.esObligatorio });
   } catch { res.status(500).json({ error: 'Error al consultar la versión' }); }
-});
+};
 
 // LOGIN
-app.post('/api/login', async (req: express.Request, res: express.Response) => {
+const handleLogin = async (req: express.Request, res: express.Response) => {
   const { usuario, password } = req.body;
   try {
     let user = await prisma.usuario.findUnique({ where: { usuario } });
@@ -122,13 +122,10 @@ app.post('/api/login', async (req: express.Request, res: express.Response) => {
     console.error('Error en login:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
-});
+};
 
-
-// ════════════════════════════════════════════════════════════════════════════════
-//  SINCRONIZACIÓN
-// ════════════════════════════════════════════════════════════════════════════════
-app.post('/api/sync', async (req: any, res: express.Response) => {
+// SINCRONIZACIÓN
+const handleSync = async (req: any, res: express.Response) => {
   const authHeader = req.headers['authorization'];
   if (authHeader) {
     const token = authHeader.split(' ')[1];
@@ -180,14 +177,10 @@ app.post('/api/sync', async (req: any, res: express.Response) => {
     console.error('Error al sincronizar:', error);
     res.status(500).json({ error: `Error interno: ${error.message}` });
   }
-});
+};
 
-// ════════════════════════════════════════════════════════════════════════════════
-//  RUTAS DE ADMINISTRADOR
-// ════════════════════════════════════════════════════════════════════════════════
-
-// GET encuestadores
-app.get('/api/admin/encuestadores', authenticateToken, requireAdmin, async (_req: express.Request, res: express.Response) => {
+// ADMIN - Encuestadores
+const handleGetEncuestadores = async (_req: express.Request, res: express.Response) => {
   try {
     const encuestadores = await prisma.usuario.findMany({
       where: { rol: 'encuestador' },
@@ -199,10 +192,9 @@ app.get('/api/admin/encuestadores', authenticateToken, requireAdmin, async (_req
     console.error('Error obteniendo encuestadores:', error);
     res.status(500).json({ error: 'Error al obtener encuestadores' });
   }
-});
+};
 
-// POST encuestador
-app.post('/api/admin/encuestadores', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+const handleCreateEncuestador = async (req: express.Request, res: express.Response) => {
   try {
     const { nombre, usuario, password } = req.body;
     if (!nombre || !usuario) return res.status(400).json({ error: 'Nombre y usuario son obligatorios' });
@@ -215,10 +207,9 @@ app.post('/api/admin/encuestadores', authenticateToken, requireAdmin, async (req
     console.error('Error creando encuestador:', error);
     res.status(500).json({ error: error.message || 'Error al crear encuestador' });
   }
-});
+};
 
-// PUT encuestador
-app.put('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+const handleUpdateEncuestador = async (req: express.Request, res: express.Response) => {
   try {
     const id = Number(req.params.id);
     const { nombre, usuario, password } = req.body;
@@ -230,10 +221,9 @@ app.put('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, async (
     console.error('Error actualizando encuestador:', error);
     res.status(500).json({ error: error.message || 'Error al actualizar encuestador' });
   }
-});
+};
 
-// DELETE encuestador
-app.delete('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, async (req: express.Request, res: express.Response) => {
+const handleDeleteEncuestador = async (req: express.Request, res: express.Response) => {
   try {
     const id = Number(req.params.id);
     await prisma.usuario.delete({ where: { id } });
@@ -242,10 +232,9 @@ app.delete('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, asyn
     console.error('Error eliminando encuestador:', error);
     res.status(500).json({ error: error.message || 'Error al eliminar encuestador' });
   }
-});
+};
 
-// GET stats
-app.get('/api/admin/stats', authenticateToken, requireAdmin, async (_req: express.Request, res: express.Response) => {
+const handleAdminStats = async (_req: express.Request, res: express.Response) => {
   try {
     const totalEncuestas = await prisma.encuesta.count();
     const totalEncuestadores = await prisma.usuario.count({ where: { rol: 'encuestador' } });
@@ -258,22 +247,41 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (_req: expres
     console.error('Error obteniendo métricas:', error);
     res.status(500).json({ error: 'Error obteniendo métricas' });
   }
-});
+};
 
-app.get('/api/admin/encuestas', authenticateToken, requireAdmin, async (_req: express.Request, res: express.Response) => {
-  try {
-    const totalEncuestas = await prisma.encuesta.count();
-    const totalEncuestadores = await prisma.usuario.count({ where: { rol: 'encuestador' } });
-    const encuestas = await prisma.encuesta.findMany({
-      orderBy: { sincronizado_en: 'desc' },
-      include: { encuestador: { select: { nombre: true, usuario: true } } },
-    });
-    res.json({ totalEncuestas, totalEncuestadores, ultimas: encuestas.slice(0, 5), encuestas });
-  } catch (error) {
-    console.error('Error obteniendo encuestas:', error);
-    res.status(500).json({ error: 'Error obteniendo encuestas' });
-  }
-});
+// ════════════════════════════════════════════════════════════════════════════════
+//  REGISTRO DE RUTAS (Soporta con y sin prefijo /api)
+// ════════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/version/download', handleDownload);
+app.get('/version/download',     handleDownload);
+
+app.get('/api/version', handleVersionInfo);
+app.get('/version',     handleVersionInfo);
+
+app.post('/api/login', handleLogin);
+app.post('/login',     handleLogin);
+
+app.post('/api/sync', handleSync);
+app.post('/sync',     handleSync);
+
+app.get('/api/admin/encuestadores', authenticateToken, requireAdmin, handleGetEncuestadores);
+app.get('/admin/encuestadores',     authenticateToken, requireAdmin, handleGetEncuestadores);
+
+app.post('/api/admin/encuestadores', authenticateToken, requireAdmin, handleCreateEncuestador);
+app.post('/admin/encuestadores',     authenticateToken, requireAdmin, handleCreateEncuestador);
+
+app.put('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, handleUpdateEncuestador);
+app.put('/admin/encuestadores/:id',     authenticateToken, requireAdmin, handleUpdateEncuestador);
+
+app.delete('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, handleDeleteEncuestador);
+app.delete('/admin/encuestadores/:id',     authenticateToken, requireAdmin, handleDeleteEncuestador);
+
+app.get('/api/admin/stats', authenticateToken, requireAdmin, handleAdminStats);
+app.get('/admin/stats',     authenticateToken, requireAdmin, handleAdminStats);
+
+app.get('/api/admin/encuestas', authenticateToken, requireAdmin, handleAdminStats);
+app.get('/admin/encuestas',     authenticateToken, requireAdmin, handleAdminStats);
 
 // POST subir versión APK
 app.post('/api/version', authenticateToken, requireAdmin, (req: any, res: any, next: any) => {
