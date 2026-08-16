@@ -34,6 +34,12 @@ app.set('trust proxy', true);
 app.use(cors());
 app.use(express.json());
 
+// Logger de depuración
+app.use((req, res, next) => {
+  console.log(`>>> [${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 // Servir la carpeta public estáticamente (tanto en /, /apk, /api/apk como /api/public)
 const publicPath = path.join(__dirname, '..', 'public');
 if (!fs.existsSync(publicPath)) {
