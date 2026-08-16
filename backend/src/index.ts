@@ -10,8 +10,19 @@ import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 
+process.on('uncaughtException', (err) => {
+  console.error('CRITICAL UNCAUGHT EXCEPTION:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('CRITICAL UNHANDLED REJECTION:', reason);
+});
+
 const connectionString = process.env.DATABASE_URL;
+console.log('Iniciando backend con DATABASE_URL:', connectionString ? 'Configurada' : 'NO DEFINIDA (Error en .env)');
 const pool = new Pool({ connectionString });
+pool.on('error', (err) => {
+  console.error('Error inesperado en cliente PostgreSQL:', err);
+});
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
