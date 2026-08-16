@@ -42,8 +42,19 @@ export default function Dashboard() {
                 estado_sincronizacion: 'sincronizado'
               })));
             }
-            const allEncuestadores = await dbService.getAllEncuestadores();
-            setEncuestadores(allEncuestadores);
+
+            // Cargar lista de encuestadores directamente desde la API central
+            const encRes = await fetch(`${BACKEND_URL}/api/admin/encuestadores`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (encRes.ok) {
+              const remoteEnc: User[] = await encRes.json();
+              setEncuestadores(remoteEnc);
+            } else {
+              const allEncuestadores = await dbService.getAllEncuestadores();
+              setEncuestadores(allEncuestadores);
+            }
+
             setLoading(false);
             return;
           }

@@ -25,7 +25,8 @@ export default function EncuestadoresList() {
         });
         if (res.ok) {
           const remoteUsers: User[] = await res.json();
-          // Sincronizar en SQLite local
+          setEncuestadores(remoteUsers);
+          // Sincronizar en SQLite local en segundo plano
           for (const u of remoteUsers) {
             const localU = await dbService.getUserByCredentials(u.usuario);
             if (!localU) {
@@ -37,6 +38,8 @@ export default function EncuestadoresList() {
               });
             }
           }
+          setLoading(false);
+          return;
         }
       }
     } catch (err) {
