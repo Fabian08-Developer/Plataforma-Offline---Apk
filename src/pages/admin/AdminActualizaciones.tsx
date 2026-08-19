@@ -1,9 +1,11 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { UploadCloud, AlertCircle, Save, Loader2 } from 'lucide-react';
+import { UploadCloud, AlertCircle, Save, Loader2, ArrowLeft } from 'lucide-react';
 import { BACKEND_URL } from '../../config';
 
 export default function AdminActualizaciones() {
+  const navigate = useNavigate();
   const { token } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -64,7 +66,17 @@ export default function AdminActualizaciones() {
 
   return (
     <div className="page-view container" style={{ paddingTop: '2rem' }}>
-      <h1 className="app-title" style={{ fontSize: '1.75rem', marginBottom: '2rem' }}>Gestor de Actualizaciones</h1>
+      <header className="page-header" style={{ maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
+        <div className="page-header-info">
+          <button onClick={() => navigate('/admin')} className="btn btn-icon btn-outline" title="Volver al panel">
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h1 className="app-title" style={{ fontSize: '1.75rem', margin: 0 }}>Gestor de Actualizaciones</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.9rem' }}>Publica nuevas versiones APK</p>
+          </div>
+        </div>
+      </header>
 
       <div className="glass-container" style={{ maxWidth: '600px', margin: '0 auto' }}>
         <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
