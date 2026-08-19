@@ -3,11 +3,32 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { dbService, type Survey } from '../db';
 import { updatePhonesList } from '../services/phoneLogic';
 import { ArrowLeft, Save, Loader2, Info } from 'lucide-react';
-import PhoneInput from 'react-phone-number-input';
+import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input';
+import { validatePhoneNumberLength } from 'libphonenumber-js';
 import 'react-phone-number-input/style.css';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { BACKEND_URL } from '../config';
+
+/**
+ * Verifica si un número de teléfono supera la longitud máxima permitida.
+ * Usa dos capas:
+ *   1. validatePhoneNumberLength() de libphonenumber-js (respeta el país)
+ *   2. Límite absoluto de 15 dígitos según el estándar E.164 internacional
+ * Esto cubre tanto el typing normal como el pegado (paste) de strings largas.
+ */
+function isPhoneTooLong(val: string): boolean {
+  try {
+    const status = validatePhoneNumberLength(val);
+    if (status === 'TOO_LONG') return true;
+  } catch {
+    // continúa con el fallback de dígitos
+  }
+  // Fallback: contar solo dígitos — E.164 permite máx 15 en total
+  const digits = val.replace(/\D/g, '');
+  return digits.length > 15;
+}
+
 
 export default function SurveyForm() {
   const { id } = useParams();
@@ -94,10 +115,15 @@ export default function SurveyForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validación: Teléfono de contacto obligatorio
+    // Validación: Teléfono de contacto obligatorio y formato válido
     if (!isEditing) {
       if (!formData.telefono_1 || formData.telefono_1.trim() === '') {
         setPhoneError('El teléfono de contacto es obligatorio.');
+        document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      if (!isValidPhoneNumber(formData.telefono_1)) {
+        setPhoneError('El número de teléfono está incompleto o no es válido para el país seleccionado.');
         document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
@@ -106,6 +132,11 @@ export default function SurveyForm() {
         formData.telefono_1 || formData.telefono_2 || formData.telefono_3;
       if (!tieneAlgunTelefono && (!newPhoneInput || newPhoneInput.trim() === '')) {
         setPhoneError('Debe haber al menos un teléfono de contacto registrado.');
+        document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      if (newPhoneInput && !isValidPhoneNumber(newPhoneInput)) {
+        setPhoneError('El número de teléfono está incompleto o no es válido para el país seleccionado.');
         document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
@@ -308,11 +339,28 @@ export default function SurveyForm() {
                 <PhoneInput 
                   defaultCountry="CO"
                   international
+                  limitMaxLength={true}
                   value={newPhoneInput as any} 
-                  onChange={(val) => setNewPhoneInput(val || '')} 
-                  className="form-input phone-wrapper"
+                  onChange={(val) => {
+                    if (val && isPhoneTooLong(val)) return;
+                    setNewPhoneInput(val || '');
+                    if (val && val.trim() !== '') setPhoneError('');
+                  }} 
+                  className={`form-input phone-wrapper${phoneError ? ' phone-input-error' : ''}`}
                   placeholder="Ej. 300 123 4567" 
                 />
+                {phoneError && (
+                  <p style={{
+                    color: '#ef4444',
+                    fontSize: '0.8rem',
+                    marginTop: '0.4rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                  }}>
+                    ⚠️ {phoneError}
+                  </p>
+                )}
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                   Al guardar, este número pasará a ser el principal (Contacto 1) y los demás se ajustarán automáticamente.
                 </p>
@@ -324,8 +372,10 @@ export default function SurveyForm() {
               <PhoneInput 
                 defaultCountry="CO"
                 international
+                limitMaxLength={true}
                 value={(formData.telefono_1 as any) || ''} 
                 onChange={(val) => {
+                  if (val && isPhoneTooLong(val)) return;
                   setFormData({...formData, telefono_1: val || ''});
                   if (val && val.trim() !== '') setPhoneError('');
                 }} 
