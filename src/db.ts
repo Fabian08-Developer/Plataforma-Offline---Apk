@@ -147,7 +147,24 @@ class DatabaseService {
   }
 
   // --- Encuestas ---
+  async getSurveyByDocumento(documento_identidad: string): Promise<Survey | undefined> {
+    const query = `SELECT * FROM encuestas WHERE documento_identidad = ? LIMIT 1;`;
+    const result = await this.db.query(query, [documento_identidad]);
+    const values = result.values;
+    return values && values.length > 0 ? (values[0] as Survey) : undefined;
+  }
+
   async addSurvey(survey: Survey): Promise<void> {
+    // Si el documento ya existe en SQLite local, actualizamos la encuesta existente para evitar duplicados
+    const existing = await this.getSurveyByDocumento(survey.documento_identidad);
+    if (existing && existing.id) {
+      await this.updateSurvey(existing.id, {
+        ...survey,
+        id: existing.id
+      });
+      return;
+    }
+
     const query = `
       INSERT INTO encuestas (
         encuestador_id, encuestador_usuario, tipo_documento, documento_identidad, nombres, apellidos, telefono_1, telefono_2, telefono_3,

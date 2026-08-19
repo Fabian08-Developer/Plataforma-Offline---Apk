@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { dbService, type Survey } from '../db';
 import { updatePhonesList } from '../services/phoneLogic';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Info } from 'lucide-react';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import { useAuth } from '../context/AuthContext';
@@ -30,6 +30,7 @@ export default function SurveyForm() {
   });
 
   const [newPhoneInput, setNewPhoneInput] = useState('');
+  const [existingFound, setExistingFound] = useState(false);
 
   useEffect(() => {
     async function loadSurvey() {
@@ -60,6 +61,25 @@ export default function SurveyForm() {
     }
     loadSurvey();
   }, [id, isEditing, token, user?.rol]);
+
+  const handleDocumentBlur = async () => {
+    if (!isEditing && formData.documento_identidad && formData.documento_identidad.trim().length >= 5) {
+      try {
+        const existing = await dbService.getSurveyByDocumento(formData.documento_identidad.trim());
+        if (existing) {
+          setFormData({
+            ...existing,
+            fecha_registro: new Date().toISOString().split('T')[0]
+          });
+          setExistingFound(true);
+        } else {
+          setExistingFound(false);
+        }
+      } catch (err) {
+        console.warn('Error al verificar documento existente:', err);
+      }
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
@@ -140,7 +160,25 @@ export default function SurveyForm() {
       </header>
 
       <form onSubmit={handleSubmit} className="glass-container" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        
+        {existingFound && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            padding: '0.75rem 1rem',
+            background: 'rgba(59, 130, 246, 0.1)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            borderRadius: 'var(--radius-md)',
+            color: '#3b82f6',
+            fontSize: '0.875rem'
+          }}>
+            <Info size={18} style={{ flexShrink: 0 }} />
+            <span>
+              <strong>Persona ya registrada:</strong> Se cargaron sus datos guardados. Al guardar, se actualizará su información en lugar de crear un duplicado.
+            </span>
+          </div>
+        )}
+
         <div className="responsive-grid">
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Documento de Identidad *</label>
@@ -157,6 +195,7 @@ export default function SurveyForm() {
                   const val = e.target.value.replace(/\D/g, '');
                   setFormData({...formData, documento_identidad: val});
                 }} 
+                onBlur={handleDocumentBlur}
                 maxLength={15}
                 className="form-input" placeholder="Ej. 123456789" style={{ width: '70%', flex: 1 }} />
             </div>
