@@ -129,6 +129,31 @@ export default function SurveyForm() {
         }
         await dbService.updateSurvey(Number(id), finalData);
       } else {
+        if (navigator.onLine && (user?.rol === 'admin' || token)) {
+          const authToken = token || localStorage.getItem('auth_token');
+          try {
+            const res = await fetch(`${BACKEND_URL}/api/admin/encuestas`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+              },
+              body: JSON.stringify(finalData)
+            });
+            if (res.ok) {
+              const resData = await res.json();
+              if (resData.encuesta?.id) {
+                finalData.id = resData.encuesta.id;
+              }
+              finalData.estado_sincronizacion = 'sincronizado';
+            }
+          } catch (e) {
+            console.warn('Error enviando encuesta directa al backend:', e);
+            finalData.estado_sincronizacion = 'pendiente';
+          }
+        } else {
+          finalData.estado_sincronizacion = 'pendiente';
+        }
         await dbService.addSurvey(finalData);
       }
       

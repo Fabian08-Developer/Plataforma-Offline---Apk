@@ -434,6 +434,31 @@ const handleCreateEncuestaAdmin = async (req: any, res: express.Response) => {
       targetUserId = req.user.id;
     }
 
+    const existe = await prisma.encuesta.findFirst({
+      where: { documento_identidad: String(documento_identidad) },
+    });
+
+    if (existe) {
+      const actualizada = await prisma.encuesta.update({
+        where: { id: existe.id },
+        data: {
+          encuestador_id: Number(targetUserId),
+          tipo_documento: String(tipo_documento || existe.tipo_documento),
+          nombres: String(nombres || existe.nombres),
+          apellidos: String(apellidos || existe.apellidos),
+          telefono_1: String(telefono_1 || existe.telefono_1),
+          telefono_2: telefono_2 ? String(telefono_2) : existe.telefono_2,
+          telefono_3: telefono_3 ? String(telefono_3) : existe.telefono_3,
+          direccion: String(direccion || existe.direccion),
+          profesion: profesion ? String(profesion) : existe.profesion,
+          fecha_registro: String(fecha_registro || existe.fecha_registro),
+          estado_sincronizacion: 'sincronizado',
+        },
+        include: { encuestador: { select: { id: true, nombre: true, usuario: true } } },
+      });
+      return res.json({ message: 'Encuesta actualizada con éxito', encuesta: actualizada });
+    }
+
     const nueva = await prisma.encuesta.create({
       data: {
         encuestador_id: Number(targetUserId),
