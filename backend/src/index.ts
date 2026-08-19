@@ -223,6 +223,24 @@ const handleSync = async (req: any, res: express.Response) => {
   }
 };
 
+// ENCUESTADOR - Obtener mis encuestas registradas en el servidor
+const handleGetMisEncuestas = async (req: any, res: express.Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Usuario no autenticado' });
+
+    const encuestas = await prisma.encuesta.findMany({
+      where: { encuestador_id: userId },
+      orderBy: { id: 'desc' },
+    });
+
+    res.json(encuestas);
+  } catch (error: any) {
+    console.error('Error al obtener encuestas del encuestador:', error);
+    res.status(500).json({ error: 'Error al consultar encuestas' });
+  }
+};
+
 // ADMIN - Encuestadores
 const handleGetEncuestadores = async (_req: express.Request, res: express.Response) => {
   try {
@@ -385,6 +403,9 @@ app.post('/login',     handleLogin);
 
 app.post('/api/sync', handleSync);
 app.post('/sync',     handleSync);
+
+app.get('/api/encuestas/mis-encuestas', authenticateToken, handleGetMisEncuestas);
+app.get('/encuestas/mis-encuestas',     authenticateToken, handleGetMisEncuestas);
 
 app.get('/api/admin/encuestadores', authenticateToken, requireAdmin, handleGetEncuestadores);
 app.get('/admin/encuestadores',     authenticateToken, requireAdmin, handleGetEncuestadores);

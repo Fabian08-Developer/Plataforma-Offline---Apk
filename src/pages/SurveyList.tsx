@@ -3,17 +3,60 @@ import { dbService, type Survey } from '../db';
 import { Plus, User, Calendar, MapPin, Phone, WifiOff, Wifi, IdCard, LogOut } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { BACKEND_URL } from '../config';
 
 export default function SurveyList() {
   const [surveys, setSurveys] = useState<Survey[]>([]);
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const navigate = useNavigate();
 
   const loadSurveys = async () => {
     try {
+      // 1. Cargar inmediatamente desde SQLite local (Offline-first)
       if (user) {
-        const data = await dbService.getSurveysByEncuestador(user.id, user.usuario);
-        setSurveys(data);
+        const localData = await dbService.getSurveysByEncuestador(user.id, user.usuario);
+        setSurveys(localData);
+      }
+
+      // 2. Si estamos online, descargar las encuestas del servidor VPS (Sincronización multidispositivo)
+      const authToken = token || localStorage.getItem('auth_token');
+      if (navigator.onLine && authToken) {
+        const res = await fetch(`${BACKEND_URL}/api/encuestas/mis-encuestas`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+
+        if (res.ok) {
+          const remoteSurveys: any[] = await res.json();
+          let hasNewData = false;
+
+          for (const s of remoteSurveys) {
+            const existing = await dbService.getSurveyByDocumento(s.documento_identidad);
+            if (!existing) {
+              await dbService.addSurvey({
+                encuestador_id: user?.id,
+                encuestador_usuario: user?.usuario,
+                tipo_documento: s.tipo_documento,
+                documento_identidad: s.documento_identidad,
+                nombres: s.nombres,
+                apellidos: s.apellidos,
+                telefono_1: s.telefono_1,
+                telefono_2: s.telefono_2 || '',
+                telefono_3: s.telefono_3 || '',
+                direccion: s.direccion,
+                fecha_registro: s.fecha_registro,
+                profesion: s.profesion || '',
+                estado_sincronizacion: 'sincronizado'
+              });
+              hasNewData = true;
+            }
+          }
+
+          // Si se descargaron encuestas nuevas de la nube, refrescar la lista local
+          if (hasNewData && user) {
+            const updated = await dbService.getSurveysByEncuestador(user.id, user.usuario);
+            setSurveys(updated);
+          }
+        }
       }
     } catch (error) {
       console.error('Error loading surveys:', error);
@@ -27,7 +70,7 @@ export default function SurveyList() {
     return () => {
       window.removeEventListener('surveys-updated', loadSurveys);
     };
-  }, []);
+  }, [user, token]);
 
   const handleLogout = () => {
     logout();
