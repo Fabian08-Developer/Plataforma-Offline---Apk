@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { dbService } from '../../db';
 import type { User } from '../../db';
+import { useToast } from '../../context/ToastContext';
 import { BACKEND_URL } from '../../config';
 import { ArrowLeft, UserPlus, Trash2, Edit2, ChevronRight, Save, X } from 'lucide-react';
 import ConfirmModal from '../../components/ConfirmModal';
 
 export default function EncuestadoresList() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [encuestadores, setEncuestadores] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -90,8 +92,10 @@ export default function EncuestadoresList() {
       // Guardar en SQLite local
       if (editingId) {
         await dbService.updateUsuario(editingId, newUser);
+        toast.success('Encuestador actualizado con éxito.');
       } else {
         await dbService.addUsuario(newUser);
+        toast.success('Nuevo encuestador creado con éxito.');
       }
       setShowForm(false);
       setEditingId(null);
@@ -99,7 +103,7 @@ export default function EncuestadoresList() {
       loadEncuestadores();
     } catch (error) {
       console.error(error);
-      alert('Error al guardar el usuario. (¿Usuario duplicado?)');
+      toast.error('Error al guardar el usuario. Verifica si el nombre de usuario ya existe.');
     }
   };
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dbService, type Survey, type User } from '../../db';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { BACKEND_URL } from '../../config';
 import {
   ArrowLeft,
@@ -33,6 +34,7 @@ interface SurveyWithEncuestador extends Survey {
 export default function AdminEncuestasList() {
   const navigate = useNavigate();
   const { token } = useAuth();
+  const { toast } = useToast();
 
   const [surveys, setSurveys] = useState<SurveyWithEncuestador[]>([]);
   const [encuestadores, setEncuestadores] = useState<User[]>([]);
@@ -130,7 +132,7 @@ export default function AdminEncuestasList() {
   // Exportar a CSV
   const handleExportCSV = () => {
     if (filteredSurveys.length === 0) {
-      alert('No hay encuestas para exportar con los filtros actuales.');
+      toast.warning('No hay encuestas para exportar con los filtros actuales.');
       return;
     }
 
@@ -180,6 +182,7 @@ export default function AdminEncuestasList() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    toast.success('Archivo CSV descargado correctamente.');
   };
 
   // Confirmar eliminación
@@ -198,10 +201,11 @@ export default function AdminEncuestasList() {
 
       await dbService.deleteSurvey(surveyToDelete.id);
       setSurveyToDelete(null);
+      toast.success('Encuesta eliminada correctamente.');
       loadData();
     } catch (err) {
       console.error('Error al eliminar encuesta:', err);
-      alert('Error al eliminar la encuesta.');
+      toast.error('Error al eliminar la encuesta.');
     } finally {
       setIsDeleting(false);
     }

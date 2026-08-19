@@ -6,12 +6,14 @@ import { ArrowLeft, Save, Loader2, Info } from 'lucide-react';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { BACKEND_URL } from '../config';
 
 export default function SurveyForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, token } = useAuth();
+  const { toast } = useToast();
   const isEditing = !!id;
 
   const [loading, setLoading] = useState(false);
@@ -135,6 +137,8 @@ export default function SurveyForm() {
         window.dispatchEvent(new Event('trigger-sync'));
       }
       
+      toast.success(isEditing ? 'Encuesta actualizada con éxito' : 'Encuesta guardada con éxito');
+
       if (user?.rol === 'admin') {
         navigate(-1);
       } else {
@@ -142,7 +146,7 @@ export default function SurveyForm() {
       }
     } catch (error) {
       console.error('Error saving survey:', error);
-      alert('Error al guardar la encuesta.');
+      toast.error('Error al guardar la encuesta.');
     } finally {
       setLoading(false);
     }

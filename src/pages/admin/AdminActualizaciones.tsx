@@ -1,12 +1,14 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { UploadCloud, AlertCircle, Save, Loader2, ArrowLeft } from 'lucide-react';
 import { BACKEND_URL } from '../../config';
 
 export default function AdminActualizaciones() {
   const navigate = useNavigate();
   const { token } = useAuth();
+  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [loading, setLoading] = useState(false);
@@ -18,7 +20,7 @@ export default function AdminActualizaciones() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file || !version) {
-      alert('Por favor completa la versión y selecciona un archivo APK.');
+      toast.warning('Por favor completa el número de versión y selecciona el archivo .apk');
       return;
     }
 
@@ -30,9 +32,6 @@ export default function AdminActualizaciones() {
       formData.append('descripcion', descripcion);
       formData.append('esObligatorio', String(esObligatorio));
 
-      console.log('Enviando a:', `${BACKEND_URL}/api/version`);
-      console.log('Token:', token ? 'presente' : 'FALTA');
-      
       const res = await fetch(`${BACKEND_URL}/api/version`, {
         method: 'POST',
         headers: {
@@ -42,14 +41,13 @@ export default function AdminActualizaciones() {
       });
 
       const data = await res.json().catch(() => null);
-      console.log('Respuesta del servidor:', res.status, data);
 
       if (!res.ok) {
         const serverMsg = data?.error || `Error HTTP ${res.status}`;
         throw new Error(serverMsg);
       }
       
-      alert('¡Actualización publicada con éxito!');
+      toast.success(`Versión v${version} publicada correctamente.`);
       setFile(null);
       setVersion('');
       setDescripcion('');
@@ -58,7 +56,7 @@ export default function AdminActualizaciones() {
 
     } catch (err: any) {
       console.error('Error completo:', err);
-      alert(`Error al publicar: ${err.message}`);
+      toast.error(`Error al publicar: ${err.message}`);
     } finally {
       setLoading(false);
     }
