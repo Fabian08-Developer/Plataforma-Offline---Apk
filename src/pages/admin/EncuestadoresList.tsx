@@ -124,16 +124,18 @@ export default function EncuestadoresList() {
 
   return (
     <div className="page-view container" style={{ paddingTop: '2rem' }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-        <button onClick={() => navigate('/admin')} className="btn btn-icon btn-outline">
-          <ArrowLeft size={20} />
-        </button>
-        <div style={{ flex: 1 }}>
-          <h1 className="app-title" style={{ fontSize: '1.75rem', margin: 0 }}>Gestión de Encuestadores</h1>
-          <p style={{ color: 'var(--text-muted)', margin: 0 }}>Administra el personal de campo</p>
+      <header className="page-header">
+        <div className="page-header-info">
+          <button onClick={() => navigate('/admin')} className="btn btn-icon btn-outline" title="Volver al panel">
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h1 className="app-title" style={{ fontSize: '1.75rem', margin: 0 }}>Gestión de Encuestadores</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.9rem' }}>Administra el personal de campo</p>
+          </div>
         </div>
         <button onClick={() => { setShowForm(true); setEditingId(null); setFormData({ nombre: '', usuario: '', password: '' }); }} className="btn btn-primary">
-          <UserPlus size={18} /> Nuevo Encuestador
+          <UserPlus size={18} /> <span>Nuevo Encuestador</span>
         </button>
       </header>
 
@@ -166,29 +168,38 @@ export default function EncuestadoresList() {
       )}
 
       {loading ? (
-        <p>Cargando encuestadores...</p>
+        <div className="glass-container" style={{ textAlign: 'center', padding: '3rem' }}>
+          <p style={{ color: 'var(--text-muted)' }}>Cargando encuestadores...</p>
+        </div>
       ) : encuestadores.length === 0 ? (
         <div className="glass-container" style={{ textAlign: 'center', padding: '3rem' }}>
           <p style={{ color: 'var(--text-muted)' }}>No hay encuestadores registrados.</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div className="encuestadores-grid">
           {encuestadores.map(encuestador => (
-            <div key={encuestador.id} className="glass-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem' }}>
-              <div>
-                <h3 style={{ margin: '0 0 0.25rem 0', fontSize: '1.1rem' }}>{encuestador.nombre}</h3>
-                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Usuario: <strong>{encuestador.usuario}</strong></p>
+            <div key={encuestador.id} className="glass-container encuestador-card">
+              <div className="encuestador-card-header">
+                <div className="encuestador-avatar">
+                  {encuestador.nombre ? encuestador.nombre.charAt(0).toUpperCase() : 'E'}
+                </div>
+                <div className="encuestador-info">
+                  <h3 className="encuestador-nombre">{encuestador.nombre}</h3>
+                  <span className="encuestador-user-tag">@{encuestador.usuario}</span>
+                </div>
+                <div className="encuestador-top-actions">
+                  <button onClick={() => handleEdit(encuestador)} className="btn btn-icon btn-outline" title="Editar">
+                    <Edit2 size={15} />
+                  </button>
+                  <button onClick={() => handleDelete(encuestador.id!)} className="btn btn-icon btn-outline" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)' }} title="Eliminar">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
               
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <button onClick={() => handleEdit(encuestador)} className="btn btn-icon btn-outline" title="Editar">
-                  <Edit2 size={16} />
-                </button>
-                <button onClick={() => handleDelete(encuestador.id!)} className="btn btn-icon btn-outline" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.5)' }} title="Eliminar">
-                  <Trash2 size={16} />
-                </button>
-                <Link to={`/admin/encuestadores/${encuestador.id}`} className="btn btn-primary" style={{ padding: '0.5rem 1rem', marginLeft: '0.5rem' }}>
-                  Ver Encuestas <ChevronRight size={16} />
+              <div className="encuestador-card-footer">
+                <Link to={`/admin/encuestadores/${encuestador.id}`} className="btn btn-primary" style={{ padding: '0.65rem 1rem' }}>
+                  <span>Ver Encuestas</span> <ChevronRight size={16} />
                 </Link>
               </div>
             </div>

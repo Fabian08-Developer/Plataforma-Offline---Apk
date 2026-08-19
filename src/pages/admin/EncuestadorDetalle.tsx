@@ -75,13 +75,15 @@ export default function EncuestadorDetalle() {
 
   return (
     <div className="page-view container" style={{ paddingTop: '2rem' }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-        <button onClick={() => navigate('/admin/encuestadores')} className="btn btn-icon btn-outline">
-          <ArrowLeft size={20} />
-        </button>
-        <div>
-          <h1 className="app-title" style={{ fontSize: '1.75rem', margin: 0 }}>Encuestas de {encuestador.nombre}</h1>
-          <p style={{ color: 'var(--text-muted)', margin: 0 }}>Total recolectadas: {surveys.length}</p>
+      <header className="page-header">
+        <div className="page-header-info">
+          <button onClick={() => navigate('/admin/encuestadores')} className="btn btn-icon btn-outline" title="Volver a encuestadores">
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h1 className="app-title" style={{ fontSize: '1.75rem', margin: 0 }}>Encuestas de {encuestador.nombre}</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.9rem' }}>Total recolectadas: <strong>{surveys.length}</strong></p>
+          </div>
         </div>
       </header>
 
