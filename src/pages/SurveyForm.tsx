@@ -146,6 +146,8 @@ export default function SurveyForm() {
                 finalData.id = resData.encuesta.id;
               }
               finalData.estado_sincronizacion = 'sincronizado';
+            } else {
+              finalData.estado_sincronizacion = 'pendiente';
             }
           } catch (e) {
             console.warn('Error enviando encuesta directa al backend:', e);
