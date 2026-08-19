@@ -314,15 +314,14 @@ const handleDeleteEncuestador = async (req: any, res: express.Response) => {
         return res.status(403).json({ error: 'Contraseña de administrador incorrecta' });
       }
 
-      // Reasignar las encuestas al administrador para preservar toda la información histórica
-      await prisma.encuesta.updateMany({
+      // Eliminar en cascada todas las encuestas realizadas por este encuestador
+      await prisma.encuesta.deleteMany({
         where: { encuestador_id: id },
-        data: { encuestador_id: adminUser.id },
       });
     }
 
     await prisma.usuario.delete({ where: { id } });
-    res.json({ message: 'Encuestador eliminado con éxito', encuestasReasignadas: totalEncuestas });
+    res.json({ message: 'Encuestador y todas sus encuestas eliminados con éxito', encuestasEliminadas: totalEncuestas });
   } catch (error: any) {
     console.error('Error eliminando encuestador:', error);
     res.status(500).json({ error: error.message || 'Error al eliminar encuestador' });

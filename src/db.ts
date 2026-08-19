@@ -140,7 +140,12 @@ class DatabaseService {
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
   }
 
-  async deleteUsuario(id: number): Promise<void> {
+  async deleteUsuario(id: number, usuario?: string): Promise<void> {
+    if (usuario) {
+      await this.db.run(`DELETE FROM encuestas WHERE encuestador_id = ? OR encuestador_usuario = ?`, [id, usuario]);
+    } else {
+      await this.db.run(`DELETE FROM encuestas WHERE encuestador_id = ?`, [id]);
+    }
     const query = `DELETE FROM usuarios WHERE id = ?`;
     await this.db.run(query, [id]);
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');

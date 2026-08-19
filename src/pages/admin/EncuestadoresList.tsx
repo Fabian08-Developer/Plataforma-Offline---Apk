@@ -172,7 +172,7 @@ export default function EncuestadoresList() {
         }
       }
 
-      await dbService.deleteUsuario(userToDelete.id);
+      await dbService.deleteUsuario(userToDelete.id, userToDelete.usuario);
       setUserToDelete(null);
       setAdminPassword('');
       setPasswordError('');
@@ -284,15 +284,15 @@ export default function EncuestadoresList() {
               <div style={{
                 marginTop: '0.85rem',
                 padding: '0.75rem 1rem',
-                background: 'rgba(245, 158, 11, 0.12)',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
                 borderRadius: 'var(--radius-md)',
-                color: '#f59e0b',
+                color: '#ef4444',
                 fontSize: '0.85rem',
                 textAlign: 'left',
                 lineHeight: 1.4
               }}>
-                ⚠️ <strong>Atención:</strong> Este encuestador tiene <strong>{surveysCount}</strong> encuestas registradas. Se reasignarán al Administrador General para preservar toda la información.
+                ⚠️ <strong>Advertencia:</strong> Este encuestador tiene <strong>{surveysCount}</strong> encuestas registradas. Al eliminarlo, <strong>también se eliminarán definitivamente todas sus encuestas asociadas</strong> del sistema.
               </div>
             ) : (
               <span style={{ fontSize: '0.85rem', color: '#ef4444', marginTop: '0.5rem', display: 'block' }}>
