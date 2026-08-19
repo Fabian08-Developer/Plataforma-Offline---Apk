@@ -48,12 +48,12 @@ export default function SyncService() {
 
   const syncPendingData = async () => {
     if (syncing) return;
-    setSyncing(true);
 
     try {
       const pendingSurveys = await dbService.getPendingSurveys();
       
       if (pendingSurveys.length > 0) {
+        setSyncing(true);
         console.log(`Sincronizando ${pendingSurveys.length} encuestas con el servidor VPS...`);
 
         const token = localStorage.getItem('auth_token');
@@ -86,37 +86,36 @@ export default function SyncService() {
           console.warn('El servidor respondió con error al sincronizar:', res.status);
         }
       }
-
-      // --- Revisar actualizaciones de versión después de sincronizar ---
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/version`);
-        if (response.ok) {
-          const data = await response.json();
-          // Comparación semántica simple
-          if (data.version_minima.localeCompare(APP_VERSION, undefined, { numeric: true, sensitivity: 'base' }) > 0) {
-            
-            // Revisar si ya fue omitida
-            const skippedVersion = localStorage.getItem('skipped_update');
-            if (!data.esObligatorio && skippedVersion === data.version_minima) {
-              console.log('Actualización opcional ya omitida previamente.');
-            } else {
-              setUpdateData({ 
-                versionMinima: data.version_minima, 
-                urlDescarga: data.url_descarga,
-                descripcion: data.descripcion,
-                esObligatorio: data.esObligatorio
-              });
-            }
-          }
-        }
-      } catch (err) {
-        console.log('No se pudo verificar la versión', err);
-      }
-      
     } catch (error) {
       console.error('Error durante la sincronización:', error);
     } finally {
       setSyncing(false);
+    }
+
+    // --- Revisar actualizaciones de versión de forma silenciosa en segundo plano ---
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/version`);
+      if (response.ok) {
+        const data = await response.json();
+        // Comparación semántica simple
+        if (data.version_minima && data.version_minima.localeCompare(APP_VERSION, undefined, { numeric: true, sensitivity: 'base' }) > 0) {
+          
+          // Revisar si ya fue omitida
+          const skippedVersion = localStorage.getItem('skipped_update');
+          if (!data.esObligatorio && skippedVersion === data.version_minima) {
+            console.log('Actualización opcional ya omitida previamente.');
+          } else {
+            setUpdateData({ 
+              versionMinima: data.version_minima, 
+              urlDescarga: data.url_descarga,
+              descripcion: data.descripcion,
+              esObligatorio: data.esObligatorio
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.log('No se pudo verificar la versión', err);
     }
   };
 
