@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { dbService } from '../../db';
 import type { Survey, User } from '../../db';
 import { BACKEND_URL } from '../../config';
-import { Users, FileText, Wifi, WifiOff, LogOut, DownloadCloud } from 'lucide-react';
+import { Users, FileText, Wifi, WifiOff, LogOut, DownloadCloud, ChevronRight } from 'lucide-react';
 
 export default function Dashboard() {
   const { user, token, logout } = useAuth();
@@ -94,15 +94,17 @@ export default function Dashboard() {
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
-        <div className="glass-container" style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ padding: '1rem', background: 'rgba(79, 70, 229, 0.1)', color: 'var(--primary)', borderRadius: '1rem' }}>
-            <FileText size={28} />
+        <Link to="/admin/encuestas" style={{ textDecoration: 'none' }}>
+          <div className="glass-container" style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', transition: 'transform 0.2s', border: '1px solid var(--primary)' }}>
+            <div style={{ padding: '1rem', background: 'rgba(79, 70, 229, 0.12)', color: 'var(--primary)', borderRadius: '1rem' }}>
+              <FileText size={28} />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>Gestor Encuestas</p>
+              <h2 style={{ margin: 0, fontSize: '2rem', color: 'var(--text-main)' }}>{surveys.length}</h2>
+            </div>
           </div>
-          <div>
-            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>Total Encuestas</p>
-            <h2 style={{ margin: 0, fontSize: '2rem' }}>{surveys.length}</h2>
-          </div>
-        </div>
+        </Link>
 
         <div className="glass-container" style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ padding: '1rem', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', borderRadius: '1rem' }}>
@@ -149,7 +151,12 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Últimas Encuestas Globales</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Últimas Encuestas Globales</h2>
+        <Link to="/admin/encuestas" className="btn btn-outline" style={{ padding: '0.4rem 0.85rem', fontSize: '0.85rem' }}>
+          Ver Todas / Gestionar <ChevronRight size={16} />
+        </Link>
+      </div>
       {loading ? (
         <div className="glass-container" style={{ textAlign: 'center', padding: '3rem' }}>
           <p style={{ color: 'var(--text-muted)' }}>Cargando encuestas centralizadas...</p>

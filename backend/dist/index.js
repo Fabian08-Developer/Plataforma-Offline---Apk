@@ -406,13 +406,53 @@ const handleDeleteEncuesta = async (req, res) => {
         res.status(500).json({ error: error.message || 'Error al eliminar encuesta' });
     }
 };
+// ADMIN - Crear encuesta directamente
+const handleCreateEncuestaAdmin = async (req, res) => {
+    try {
+        const { encuestador_id, tipo_documento, documento_identidad, nombres, apellidos, telefono_1, telefono_2, telefono_3, direccion, profesion, fecha_registro, } = req.body;
+        if (!documento_identidad) {
+            return res.status(400).json({ error: 'El documento de identidad es obligatorio' });
+        }
+        let targetUserId = encuestador_id || req.user?.id;
+        if (targetUserId) {
+            const userExists = await prisma.usuario.findUnique({ where: { id: Number(targetUserId) } });
+            if (!userExists)
+                targetUserId = req.user.id;
+        }
+        else {
+            targetUserId = req.user.id;
+        }
+        const nueva = await prisma.encuesta.create({
+            data: {
+                encuestador_id: Number(targetUserId),
+                tipo_documento: String(tipo_documento || 'C.C'),
+                documento_identidad: String(documento_identidad),
+                nombres: String(nombres || ''),
+                apellidos: String(apellidos || ''),
+                telefono_1: String(telefono_1 || ''),
+                telefono_2: telefono_2 ? String(telefono_2) : '',
+                telefono_3: telefono_3 ? String(telefono_3) : '',
+                direccion: String(direccion || ''),
+                profesion: profesion ? String(profesion) : '',
+                fecha_registro: String(fecha_registro || new Date().toISOString().split('T')[0]),
+                estado_sincronizacion: 'sincronizado',
+            },
+            include: { encuestador: { select: { id: true, nombre: true, usuario: true } } },
+        });
+        res.json({ message: 'Encuesta creada con éxito', encuesta: nueva });
+    }
+    catch (error) {
+        console.error('Error creando encuesta admin:', error);
+        res.status(500).json({ error: error.message || 'Error al crear encuesta' });
+    }
+};
 const handleAdminStats = async (_req, res) => {
     try {
         const totalEncuestas = await prisma.encuesta.count();
         const totalEncuestadores = await prisma.usuario.count({ where: { rol: 'encuestador' } });
         const encuestas = await prisma.encuesta.findMany({
             orderBy: { sincronizado_en: 'desc' },
-            include: { encuestador: { select: { nombre: true, usuario: true } } },
+            include: { encuestador: { select: { id: true, nombre: true, usuario: true } } },
         });
         res.json({ totalEncuestas, totalEncuestadores, ultimas: encuestas.slice(0, 5), encuestas });
     }
@@ -446,6 +486,8 @@ app.delete('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, hand
 app.delete('/admin/encuestadores/:id', authenticateToken, requireAdmin, handleDeleteEncuestador);
 app.get('/api/admin/encuestas/:id', authenticateToken, requireAdmin, handleGetEncuestaById);
 app.get('/admin/encuestas/:id', authenticateToken, requireAdmin, handleGetEncuestaById);
+app.post('/api/admin/encuestas', authenticateToken, requireAdmin, handleCreateEncuestaAdmin);
+app.post('/admin/encuestas', authenticateToken, requireAdmin, handleCreateEncuestaAdmin);
 app.put('/api/admin/encuestas/:id', authenticateToken, requireAdmin, handleUpdateEncuesta);
 app.put('/admin/encuestas/:id', authenticateToken, requireAdmin, handleUpdateEncuesta);
 app.delete('/api/admin/encuestas/:id', authenticateToken, requireAdmin, handleDeleteEncuesta);

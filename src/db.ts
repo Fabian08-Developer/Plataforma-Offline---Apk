@@ -264,6 +264,12 @@ class DatabaseService {
     await this.db.run(query, [id]);
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
   }
+
+  async deleteSurvey(id: number): Promise<void> {
+    const query = `DELETE FROM encuestas WHERE id = ?;`;
+    await this.db.run(query, [id]);
+    if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
+  }
 }
 
 export const dbService = new DatabaseService();

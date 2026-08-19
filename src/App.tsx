@@ -8,6 +8,7 @@ import Dashboard from './pages/admin/Dashboard';
 import EncuestadoresList from './pages/admin/EncuestadoresList';
 import EncuestadorDetalle from './pages/admin/EncuestadorDetalle';
 import AdminActualizaciones from './pages/admin/AdminActualizaciones';
+import AdminEncuestasList from './pages/admin/AdminEncuestasList';
 
 function ProtectedRoute({ children, allowedRole }: { children: React.ReactNode, allowedRole?: 'admin' | 'encuestador' }) {
   const { user, isLoading } = useAuth();
@@ -35,10 +36,12 @@ function AppRoutes() {
 
         {/* Rutas de Administrador */}
         <Route path="/admin" element={<ProtectedRoute allowedRole="admin"><Dashboard /></ProtectedRoute>} />
+        <Route path="/admin/encuestas" element={<ProtectedRoute allowedRole="admin"><AdminEncuestasList /></ProtectedRoute>} />
+        <Route path="/admin/new" element={<ProtectedRoute allowedRole="admin"><SurveyForm /></ProtectedRoute>} />
+        <Route path="/admin/edit/:id" element={<ProtectedRoute allowedRole="admin"><SurveyForm /></ProtectedRoute>} />
         <Route path="/admin/encuestadores" element={<ProtectedRoute allowedRole="admin"><EncuestadoresList /></ProtectedRoute>} />
         <Route path="/admin/encuestadores/:id" element={<ProtectedRoute allowedRole="admin"><EncuestadorDetalle /></ProtectedRoute>} />
         <Route path="/admin/actualizaciones" element={<ProtectedRoute allowedRole="admin"><AdminActualizaciones /></ProtectedRoute>} />
-        <Route path="/admin/edit/:id" element={<ProtectedRoute allowedRole="admin"><SurveyForm /></ProtectedRoute>} />
       </Routes>
     </>
   );
