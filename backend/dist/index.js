@@ -252,6 +252,83 @@ const handleDeleteEncuestador = async (req, res) => {
         res.status(500).json({ error: error.message || 'Error al eliminar encuestador' });
     }
 };
+// ADMIN - Obtener encuestador por ID y sus encuestas
+const handleGetEncuestadorDetalle = async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const encuestador = await prisma.usuario.findUnique({
+            where: { id },
+            select: { id: true, nombre: true, usuario: true, rol: true, estado: true, creado_en: true },
+        });
+        if (!encuestador)
+            return res.status(404).json({ error: 'Encuestador no encontrado' });
+        const encuestas = await prisma.encuesta.findMany({
+            where: { encuestador_id: id },
+            orderBy: { id: 'desc' },
+        });
+        res.json({ encuestador, encuestas });
+    }
+    catch (error) {
+        console.error('Error obteniendo detalle de encuestador:', error);
+        res.status(500).json({ error: 'Error al obtener detalle del encuestador' });
+    }
+};
+// ADMIN - Obtener encuesta por ID
+const handleGetEncuestaById = async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const encuesta = await prisma.encuesta.findUnique({
+            where: { id },
+            include: { encuestador: { select: { id: true, nombre: true, usuario: true } } },
+        });
+        if (!encuesta)
+            return res.status(404).json({ error: 'Encuesta no encontrada' });
+        res.json(encuesta);
+    }
+    catch (error) {
+        console.error('Error obteniendo encuesta:', error);
+        res.status(500).json({ error: 'Error al obtener encuesta' });
+    }
+};
+// ADMIN - Actualizar encuesta por ID
+const handleUpdateEncuesta = async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const { tipo_documento, documento_identidad, nombres, apellidos, telefono_1, telefono_2, telefono_3, direccion, profesion, fecha_registro } = req.body;
+        const encuesta = await prisma.encuesta.update({
+            where: { id },
+            data: {
+                tipo_documento: String(tipo_documento || 'C.C'),
+                documento_identidad: String(documento_identidad),
+                nombres: String(nombres || ''),
+                apellidos: String(apellidos || ''),
+                telefono_1: String(telefono_1 || ''),
+                telefono_2: telefono_2 ? String(telefono_2) : '',
+                telefono_3: telefono_3 ? String(telefono_3) : '',
+                direccion: String(direccion || ''),
+                profesion: profesion ? String(profesion) : '',
+                fecha_registro: String(fecha_registro || new Date().toISOString().split('T')[0]),
+            },
+        });
+        res.json({ message: 'Encuesta actualizada con éxito', encuesta });
+    }
+    catch (error) {
+        console.error('Error actualizando encuesta:', error);
+        res.status(500).json({ error: error.message || 'Error al actualizar encuesta' });
+    }
+};
+// ADMIN - Eliminar encuesta por ID
+const handleDeleteEncuesta = async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        await prisma.encuesta.delete({ where: { id } });
+        res.json({ message: 'Encuesta eliminada con éxito' });
+    }
+    catch (error) {
+        console.error('Error eliminando encuesta:', error);
+        res.status(500).json({ error: error.message || 'Error al eliminar encuesta' });
+    }
+};
 const handleAdminStats = async (_req, res) => {
     try {
         const totalEncuestas = await prisma.encuesta.count();
@@ -280,12 +357,20 @@ app.post('/api/sync', handleSync);
 app.post('/sync', handleSync);
 app.get('/api/admin/encuestadores', authenticateToken, requireAdmin, handleGetEncuestadores);
 app.get('/admin/encuestadores', authenticateToken, requireAdmin, handleGetEncuestadores);
+app.get('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, handleGetEncuestadorDetalle);
+app.get('/admin/encuestadores/:id', authenticateToken, requireAdmin, handleGetEncuestadorDetalle);
 app.post('/api/admin/encuestadores', authenticateToken, requireAdmin, handleCreateEncuestador);
 app.post('/admin/encuestadores', authenticateToken, requireAdmin, handleCreateEncuestador);
 app.put('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, handleUpdateEncuestador);
 app.put('/admin/encuestadores/:id', authenticateToken, requireAdmin, handleUpdateEncuestador);
 app.delete('/api/admin/encuestadores/:id', authenticateToken, requireAdmin, handleDeleteEncuestador);
 app.delete('/admin/encuestadores/:id', authenticateToken, requireAdmin, handleDeleteEncuestador);
+app.get('/api/admin/encuestas/:id', authenticateToken, requireAdmin, handleGetEncuestaById);
+app.get('/admin/encuestas/:id', authenticateToken, requireAdmin, handleGetEncuestaById);
+app.put('/api/admin/encuestas/:id', authenticateToken, requireAdmin, handleUpdateEncuesta);
+app.put('/admin/encuestas/:id', authenticateToken, requireAdmin, handleUpdateEncuesta);
+app.delete('/api/admin/encuestas/:id', authenticateToken, requireAdmin, handleDeleteEncuesta);
+app.delete('/admin/encuestas/:id', authenticateToken, requireAdmin, handleDeleteEncuesta);
 app.get('/api/admin/stats', authenticateToken, requireAdmin, handleAdminStats);
 app.get('/admin/stats', authenticateToken, requireAdmin, handleAdminStats);
 app.get('/api/admin/encuestas', authenticateToken, requireAdmin, handleAdminStats);

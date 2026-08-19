@@ -6,11 +6,12 @@ import { ArrowLeft, Save, Loader2 } from 'lucide-react';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import { useAuth } from '../context/AuthContext';
+import { BACKEND_URL } from '../config';
 
 export default function SurveyForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const isEditing = !!id;
 
   const [loading, setLoading] = useState(false);
@@ -33,6 +34,24 @@ export default function SurveyForm() {
   useEffect(() => {
     async function loadSurvey() {
       if (isEditing) {
+        try {
+          const authToken = token || localStorage.getItem('auth_token');
+          if (navigator.onLine && (user?.rol === 'admin' || authToken)) {
+            const res = await fetch(`${BACKEND_URL}/api/admin/encuestas/${id}`, {
+              headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+            });
+            if (res.ok) {
+              const remoteSurvey = await res.json();
+              if (remoteSurvey) {
+                setFormData(remoteSurvey);
+                return;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Fallback a encuesta local SQLite:', err);
+        }
+
         const survey = await dbService.getSurveyById(Number(id));
         if (survey) {
           setFormData(survey);
@@ -40,7 +59,7 @@ export default function SurveyForm() {
       }
     }
     loadSurvey();
-  }, [id, isEditing]);
+  }, [id, isEditing, token, user?.rol]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
@@ -64,7 +83,7 @@ export default function SurveyForm() {
       finalData.telefono_1 = updatedPhones[0] || '';
       finalData.telefono_2 = updatedPhones[1] || '';
       finalData.telefono_3 = updatedPhones[2] || '';
-      finalData.estado_sincronizacion = 'pendiente';
+      finalData.estado_sincronizacion = user?.rol === 'admin' ? 'sincronizado' : 'pendiente';
       
       if (!isEditing) {
         finalData.encuestador_id = user?.id;
@@ -73,6 +92,17 @@ export default function SurveyForm() {
       }
 
       if (isEditing) {
+        if (navigator.onLine && (user?.rol === 'admin' || token)) {
+          const authToken = token || localStorage.getItem('auth_token');
+          await fetch(`${BACKEND_URL}/api/admin/encuestas/${id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+            },
+            body: JSON.stringify(finalData)
+          }).catch(console.warn);
+        }
         await dbService.updateSurvey(Number(id), finalData);
       } else {
         await dbService.addSurvey(finalData);

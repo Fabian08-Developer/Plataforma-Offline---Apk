@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../../db';
 import type { Survey, User } from '../../db';
+import { useAuth } from '../../context/AuthContext';
+import { BACKEND_URL } from '../../config';
 import { ArrowLeft, IdCard, MapPin, Calendar, Phone, Wifi, WifiOff, Edit } from 'lucide-react';
 
 export default function EncuestadorDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { token } = useAuth();
   
   const [encuestador, setEncuestador] = useState<User | null>(null);
   const [surveys, setSurveys] = useState<Survey[]>([]);
@@ -15,6 +18,45 @@ export default function EncuestadorDetalle() {
   useEffect(() => {
     async function loadData() {
       if (!id) return;
+      setLoading(true);
+
+      try {
+        // 1. Intentar cargar desde el backend centralizado (VPS)
+        const authToken = token || localStorage.getItem('auth_token');
+        if (navigator.onLine || authToken) {
+          const res = await fetch(`${BACKEND_URL}/api/admin/encuestadores/${id}`, {
+            headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.encuestador) {
+              setEncuestador(data.encuestador);
+              setSurveys((data.encuestas || []).map((s: any) => ({
+                id: s.id,
+                encuestador_id: s.encuestador_id,
+                tipo_documento: s.tipo_documento,
+                documento_identidad: s.documento_identidad,
+                nombres: s.nombres,
+                apellidos: s.apellidos,
+                telefono_1: s.telefono_1,
+                telefono_2: s.telefono_2,
+                telefono_3: s.telefono_3,
+                direccion: s.direccion,
+                fecha_registro: s.fecha_registro,
+                profesion: s.profesion,
+                estado_sincronizacion: s.estado_sincronizacion || 'sincronizado'
+              })));
+              setLoading(false);
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Fallback a encuestas locales de SQLite:', err);
+      }
+
+      // 2. Fallback local a SQLite
       const allEncuestadores = await dbService.getAllEncuestadores();
       const found = allEncuestadores.find(e => e.id === Number(id));
       
@@ -26,7 +68,7 @@ export default function EncuestadorDetalle() {
       setLoading(false);
     }
     loadData();
-  }, [id]);
+  }, [id, token]);
 
   if (loading) return <div className="container page-view"><p>Cargando datos...</p></div>;
   if (!encuestador) return <div className="container page-view"><p>Encuestador no encontrado.</p></div>;
