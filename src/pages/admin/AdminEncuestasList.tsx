@@ -4,6 +4,7 @@ import { dbService, type Survey, type User } from '../../db';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { BACKEND_URL } from '../../config';
+import { exportSurveysToExcel } from '../../services/exportExcel';
 import {
   ArrowLeft,
   Plus,
@@ -16,7 +17,7 @@ import {
   Calendar,
   IdCard,
   Briefcase,
-  Download,
+  FileSpreadsheet,
   Wifi,
   WifiOff,
   User as UserIcon,
@@ -53,26 +54,40 @@ export default function AdminEncuestasList() {
     try {
       const authToken = token || localStorage.getItem('auth_token');
       if (navigator.onLine) {
-        // Cargar todas las encuestas centralizadas
-        const resEncuestas = await fetch(`${BACKEND_URL}/api/admin/encuestas`, {
-          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-        });
-        if (resEncuestas.ok) {
-          const data = await resEncuestas.json();
-          setSurveys(data.encuestas || []);
+        // Verificar que el backend sea alcanzable antes de intentar fetch
+        let backendOk = false;
+        try {
+          const ctrl = new AbortController();
+          const tid = setTimeout(() => ctrl.abort(), 2000);
+          const ping = await fetch(`${BACKEND_URL}/api/version`, { method: 'HEAD', signal: ctrl.signal });
+          clearTimeout(tid);
+          backendOk = ping.ok || ping.status < 500;
+        } catch {
+          backendOk = false;
         }
 
-        // Cargar lista de encuestadores para el filtro
-        const resUsers = await fetch(`${BACKEND_URL}/api/admin/encuestadores`, {
-          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-        });
-        if (resUsers.ok) {
-          const users = await resUsers.json();
-          setEncuestadores(users || []);
-        }
+        if (backendOk) {
+          // Cargar todas las encuestas centralizadas
+          const resEncuestas = await fetch(`${BACKEND_URL}/api/admin/encuestas`, {
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+          });
+          if (resEncuestas.ok) {
+            const data = await resEncuestas.json();
+            setSurveys(data.encuestas || []);
+          }
 
-        setLoading(false);
-        return;
+          // Cargar lista de encuestadores para el filtro
+          const resUsers = await fetch(`${BACKEND_URL}/api/admin/encuestadores`, {
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+          });
+          if (resUsers.ok) {
+            const users = await resUsers.json();
+            setEncuestadores(users || []);
+          }
+
+          setLoading(false);
+          return;
+        }
       }
     } catch (err) {
       console.warn('Fallback a encuestas locales en SQLite:', err);
@@ -85,6 +100,7 @@ export default function AdminEncuestasList() {
     setEncuestadores(localUsers);
     setLoading(false);
   };
+
 
   useEffect(() => {
     loadData();
@@ -129,60 +145,39 @@ export default function AdminEncuestasList() {
     });
   }, [surveys, searchTerm, selectedEncuestador]);
 
-  // Exportar a CSV
-  const handleExportCSV = () => {
+  // Exportar a Excel (XLSX con diseño profesional)
+  const handleExportXLSX = async () => {
     if (filteredSurveys.length === 0) {
       toast.warning('No hay encuestas para exportar con los filtros actuales.');
       return;
     }
 
-    const headers = [
-      'ID',
-      'Tipo Documento',
-      'Documento',
-      'Nombres',
-      'Apellidos',
-      'Telefono 1',
-      'Telefono 2',
-      'Telefono 3',
-      'Direccion',
-      'Profesion',
-      'Fecha Registro',
-      'Encuestador',
-      'Estado',
-    ];
+    try {
+      const data = filteredSurveys.map((s) => ({
+        id:                    s.id ?? '',
+        tipo_documento:        s.tipo_documento ?? 'C.C',
+        documento_identidad:   s.documento_identidad ?? '',
+        nombres:               s.nombres ?? '',
+        apellidos:             s.apellidos ?? '',
+        telefono_1:            s.telefono_1 ?? '',
+        telefono_2:            s.telefono_2 ?? '',
+        telefono_3:            s.telefono_3 ?? '',
+        direccion:             s.direccion ?? '',
+        profesion:             s.profesion ?? '',
+        fecha_registro:        s.fecha_registro ?? '',
+        encuestadorNombre:     s.encuestador?.nombre ?? s.encuestador_usuario ?? 'Desconocido',
+        estado_sincronizacion: s.estado_sincronizacion ?? 'sincronizado',
+      }));
 
-    const rows = filteredSurveys.map((s) => [
-      s.id || '',
-      `"${s.tipo_documento || 'C.C'}"`,
-      `"${s.documento_identidad || ''}"`,
-      `"${s.nombres || ''}"`,
-      `"${s.apellidos || ''}"`,
-      `"${s.telefono_1 || ''}"`,
-      `"${s.telefono_2 || ''}"`,
-      `"${s.telefono_3 || ''}"`,
-      `"${(s.direccion || '').replace(/"/g, '""')}"`,
-      `"${(s.profesion || '').replace(/"/g, '""')}"`,
-      `"${s.fecha_registro || ''}"`,
-      `"${s.encuestador?.nombre || s.encuestador_usuario || 'Desconocido'}"`,
-      `"${s.estado_sincronizacion || 'sincronizado'}"`,
-    ]);
-
-    const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute(
-      'download',
-      `encuestas_export_${new Date().toISOString().split('T')[0]}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success('Archivo CSV descargado correctamente.');
+      await exportSurveysToExcel(
+        data,
+        `encuestas_export_${new Date().toISOString().split('T')[0]}.xlsx`
+      );
+      toast.success('Archivo Excel descargado correctamente.');
+    } catch (err) {
+      console.error('Error al exportar Excel:', err);
+      toast.error('No se pudo generar el archivo Excel. Inténtalo de nuevo.');
+    }
   };
 
   // Confirmar eliminación
@@ -235,11 +230,11 @@ export default function AdminEncuestasList() {
 
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <button
-            onClick={handleExportCSV}
+            onClick={handleExportXLSX}
             className="btn btn-outline"
-            title="Descargar datos en CSV"
+            title="Descargar datos en Excel (.xlsx)"
           >
-            <Download size={18} /> <span>Exportar CSV</span>
+            <FileSpreadsheet size={18} /> <span>Exportar Excel</span>
           </button>
           <button onClick={() => navigate('/admin/new')} className="btn btn-primary">
             <Plus size={18} /> <span>Nueva Encuesta</span>

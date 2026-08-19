@@ -1,13 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { dbService } from '../db';
 import { Wifi } from 'lucide-react';
 import UpdateModal from './UpdateModal';
 import { APP_VERSION, BACKEND_URL } from '../config';
 
+/**
+ * Verifica si el backend es alcanzable con un timeout breve.
+ * Evita ERR_CONNECTION_REFUSED en consola cuando el servidor local no está corriendo.
+ */
+async function isBackendReachable(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    await fetch(`${BACKEND_URL}/api/version`, {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function SyncService() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncing, setSyncing] = useState(false);
   const [updateData, setUpdateData] = useState<{ versionMinima: string, urlDescarga: string, descripcion: string, esObligatorio: boolean } | null>(null);
+  /** Cache de alcanzabilidad: evita múltiples HEAD requests en el mismo ciclo */
+  const backendReachableRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -48,6 +69,15 @@ export default function SyncService() {
 
   const syncPendingData = async () => {
     if (syncing) return;
+
+    // Verificar alcanzabilidad real del backend antes de intentar fetch
+    const reachable = await isBackendReachable();
+    backendReachableRef.current = reachable;
+
+    if (!reachable) {
+      // Backend no disponible — modo offline silencioso, sin spam en consola
+      return;
+    }
 
     try {
       const pendingSurveys = await dbService.getPendingSurveys();
@@ -93,20 +123,17 @@ export default function SyncService() {
         }
       }
     } catch (error) {
-      console.error('Error durante la sincronización:', error);
+      console.warn('Error durante la sincronización:', error);
     } finally {
       setSyncing(false);
     }
 
-    // --- Revisar actualizaciones de versión de forma silenciosa en segundo plano ---
+    // --- Revisar actualizaciones de versión de forma silenciosa ---
     try {
       const response = await fetch(`${BACKEND_URL}/api/version`);
       if (response.ok) {
         const data = await response.json();
-        // Comparación semántica simple
         if (data.version_minima && data.version_minima.localeCompare(APP_VERSION, undefined, { numeric: true, sensitivity: 'base' }) > 0) {
-          
-          // Revisar si ya fue omitida
           const skippedVersion = localStorage.getItem('skipped_update');
           if (!data.esObligatorio && skippedVersion === data.version_minima) {
             console.log('Actualización opcional ya omitida previamente.');
@@ -120,8 +147,8 @@ export default function SyncService() {
           }
         }
       }
-    } catch (err) {
-      console.log('No se pudo verificar la versión', err);
+    } catch {
+      // Silencioso: ya verificamos alcanzabilidad arriba
     }
   };
 

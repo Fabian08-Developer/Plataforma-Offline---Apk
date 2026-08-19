@@ -452,3 +452,14 @@ h1, h2, h3, h4 {
   width: 100%;
   justify-content: center;
 }
+
+/* ── PhoneInput: estado de error ────────────────────────────────────────────── */
+.phone-input-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+}
+
+.phone-input-error:focus-within {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25) !important;
+}

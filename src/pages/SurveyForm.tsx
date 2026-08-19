@@ -33,6 +33,7 @@ export default function SurveyForm() {
 
   const [newPhoneInput, setNewPhoneInput] = useState('');
   const [existingFound, setExistingFound] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
 
   useEffect(() => {
     async function loadSurvey() {
@@ -92,6 +93,24 @@ export default function SurveyForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validación: Teléfono de contacto obligatorio
+    if (!isEditing) {
+      if (!formData.telefono_1 || formData.telefono_1.trim() === '') {
+        setPhoneError('El teléfono de contacto es obligatorio.');
+        document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    } else {
+      const tieneAlgunTelefono =
+        formData.telefono_1 || formData.telefono_2 || formData.telefono_3;
+      if (!tieneAlgunTelefono && (!newPhoneInput || newPhoneInput.trim() === '')) {
+        setPhoneError('Debe haber al menos un teléfono de contacto registrado.');
+        document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    }
+    setPhoneError('');
     setLoading(true);
 
     try {
@@ -301,15 +320,30 @@ export default function SurveyForm() {
             </>
           ) : (
             <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Teléfono de Contacto 1 *</label>
+              <label className="form-label">Teléfono de Contacto *</label>
               <PhoneInput 
                 defaultCountry="CO"
                 international
                 value={(formData.telefono_1 as any) || ''} 
-                onChange={(val) => setFormData({...formData, telefono_1: val || ''})} 
-                className="form-input phone-wrapper"
+                onChange={(val) => {
+                  setFormData({...formData, telefono_1: val || ''});
+                  if (val && val.trim() !== '') setPhoneError('');
+                }} 
+                className={`form-input phone-wrapper${phoneError ? ' phone-input-error' : ''}`}
                 placeholder="Ej. 300 123 4567" 
               />
+              {phoneError && (
+                <p style={{
+                  color: '#ef4444',
+                  fontSize: '0.8rem',
+                  marginTop: '0.4rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                }}>
+                  ⚠️ {phoneError}
+                </p>
+              )}
             </div>
           )}
         </div>
