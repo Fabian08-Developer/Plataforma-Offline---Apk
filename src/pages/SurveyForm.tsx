@@ -3,8 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { dbService, type Survey } from '../db';
 import { updatePhonesList } from '../services/phoneLogic';
 import { ArrowLeft, Save, Loader2, Info } from 'lucide-react';
-import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input';
-import { validatePhoneNumberLength } from 'libphonenumber-js';
+import PhoneInput from 'react-phone-number-input';
+import { isPossiblePhoneNumber, validatePhoneNumberLength } from 'libphonenumber-js';
 import 'react-phone-number-input/style.css';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -122,7 +122,7 @@ export default function SurveyForm() {
         document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      if (!isValidPhoneNumber(formData.telefono_1)) {
+      if (!isPossiblePhoneNumber(formData.telefono_1)) {
         setPhoneError('El número de teléfono está incompleto o no es válido para el país seleccionado.');
         document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
@@ -135,7 +135,7 @@ export default function SurveyForm() {
         document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      if (newPhoneInput && !isValidPhoneNumber(newPhoneInput)) {
+      if (newPhoneInput && !isPossiblePhoneNumber(newPhoneInput)) {
         setPhoneError('El número de teléfono está incompleto o no es válido para el país seleccionado.');
         document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
