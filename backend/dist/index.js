@@ -294,8 +294,36 @@ const handleUpdateEncuestador = async (req, res) => {
 const handleDeleteEncuestador = async (req, res) => {
     try {
         const id = Number(req.params.id);
+        const { adminPassword } = req.body || {};
+        const encuestador = await prisma.usuario.findUnique({ where: { id } });
+        if (!encuestador)
+            return res.status(404).json({ error: 'Encuestador no encontrado' });
+        const totalEncuestas = await prisma.encuesta.count({ where: { encuestador_id: id } });
+        if (totalEncuestas > 0) {
+            if (!adminPassword) {
+                return res.status(400).json({
+                    requiresPassword: true,
+                    totalEncuestas,
+                    error: `Este encuestador tiene ${totalEncuestas} encuestas registradas. Ingrese su contraseña de administrador para confirmar la eliminación.`,
+                });
+            }
+            // Validar la contraseña del administrador actual
+            const adminUserId = req.user?.id;
+            const adminUser = await prisma.usuario.findUnique({ where: { id: adminUserId } });
+            if (!adminUser)
+                return res.status(401).json({ error: 'Administrador no autenticado' });
+            const validPassword = await bcryptjs_1.default.compare(adminPassword, adminUser.password).catch(() => adminPassword === adminUser.password);
+            if (!validPassword) {
+                return res.status(403).json({ error: 'Contraseña de administrador incorrecta' });
+            }
+            // Reasignar las encuestas al administrador para preservar toda la información histórica
+            await prisma.encuesta.updateMany({
+                where: { encuestador_id: id },
+                data: { encuestador_id: adminUser.id },
+            });
+        }
         await prisma.usuario.delete({ where: { id } });
-        res.json({ message: 'Encuestador eliminado con éxito' });
+        res.json({ message: 'Encuestador eliminado con éxito', encuestasReasignadas: totalEncuestas });
     }
     catch (error) {
         console.error('Error eliminando encuestador:', error);

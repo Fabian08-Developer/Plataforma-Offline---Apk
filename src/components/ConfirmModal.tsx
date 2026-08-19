@@ -1,4 +1,5 @@
-import { Trash2, AlertTriangle, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Trash2, AlertTriangle, Loader2, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -8,6 +9,11 @@ interface ConfirmModalProps {
   cancelText?: string;
   isDanger?: boolean;
   isLoading?: boolean;
+  requiresPassword?: boolean;
+  passwordValue?: string;
+  onPasswordChange?: (val: string) => void;
+  passwordPlaceholder?: string;
+  errorMessage?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -20,10 +26,23 @@ export default function ConfirmModal({
   cancelText = 'Cancelar',
   isDanger = true,
   isLoading = false,
+  requiresPassword = false,
+  passwordValue = '',
+  onPasswordChange,
+  passwordPlaceholder = 'Ingresa tu contraseña de Administrador',
+  errorMessage = '',
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const [showPassword, setShowPassword] = useState(false);
+
   if (!isOpen) return null;
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (!requiresPassword || passwordValue.trim())) {
+      onConfirm();
+    }
+  };
 
   return (
     <div
@@ -50,7 +69,7 @@ export default function ConfirmModal({
       <div
         className="glass-container"
         style={{
-          maxWidth: '420px',
+          maxWidth: '440px',
           width: '100%',
           padding: '2rem',
           textAlign: 'center',
@@ -97,11 +116,78 @@ export default function ConfirmModal({
             color: 'var(--text-muted)',
             fontSize: '0.95rem',
             lineHeight: 1.5,
-            marginBottom: '1.75rem',
+            marginBottom: requiresPassword ? '1.25rem' : '1.75rem',
           }}
         >
           {message}
         </div>
+
+        {/* Password Input for Protected Confirmations */}
+        {requiresPassword && (
+          <div style={{ marginBottom: '1.5rem', textAlign: 'left' }}>
+            <label
+              className="form-label"
+              style={{
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                color: 'var(--text-main)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                marginBottom: '0.5rem',
+              }}
+            >
+              <Lock size={14} color="var(--primary)" /> Contraseña de Administrador *
+            </label>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input
+                autoFocus
+                type={showPassword ? 'text' : 'password'}
+                value={passwordValue}
+                onChange={(e) => onPasswordChange && onPasswordChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={passwordPlaceholder}
+                className="form-input"
+                style={{
+                  paddingRight: '2.75rem',
+                  borderColor: errorMessage ? '#ef4444' : undefined,
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '0.75rem',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+
+            {errorMessage && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  color: '#ef4444',
+                  fontSize: '0.8rem',
+                  marginTop: '0.5rem',
+                }}
+              >
+                <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         <div
@@ -128,7 +214,7 @@ export default function ConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={isLoading}
+            disabled={isLoading || (requiresPassword && !passwordValue.trim())}
             className="btn"
             style={{
               padding: '0.75rem 1rem',
@@ -136,6 +222,7 @@ export default function ConfirmModal({
               width: '100%',
               background: isDanger ? '#ef4444' : 'var(--primary)',
               color: 'white',
+              opacity: requiresPassword && !passwordValue.trim() ? 0.6 : 1,
               boxShadow: isDanger ? '0 4px 14px 0 rgba(239, 68, 68, 0.4)' : undefined,
             }}
           >

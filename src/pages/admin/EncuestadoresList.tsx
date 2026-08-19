@@ -15,9 +15,6 @@ export default function EncuestadoresList() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ nombre: '', usuario: '', password: '' });
 
-  const [userToDelete, setUserToDelete] = useState<User | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
   const loadEncuestadores = async () => {
     setLoading(true);
     try {
@@ -112,23 +109,78 @@ export default function EncuestadoresList() {
     setShowForm(true);
   };
 
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [requiresPassword, setRequiresPassword] = useState(false);
+  const [surveysCount, setSurveysCount] = useState(0);
+
+  const handleOpenDeleteModal = async (encuestador: User) => {
+    setUserToDelete(encuestador);
+    setAdminPassword('');
+    setPasswordError('');
+    setIsDeleting(false);
+
+    try {
+      if (encuestador.id) {
+        const localSurveys = await dbService.getSurveysByEncuestador(encuestador.id, encuestador.usuario);
+        if (localSurveys.length > 0) {
+          setRequiresPassword(true);
+          setSurveysCount(localSurveys.length);
+          return;
+        }
+      }
+    } catch {
+      // continuar
+    }
+
+    setRequiresPassword(false);
+    setSurveysCount(0);
+  };
+
   const handleConfirmDelete = async () => {
     if (!userToDelete?.id) return;
     setIsDeleting(true);
+    setPasswordError('');
 
     try {
       if (navigator.onLine) {
         const token = localStorage.getItem('auth_token');
-        await fetch(`${BACKEND_URL}/api/admin/encuestadores/${userToDelete.id}`, {
+        const res = await fetch(`${BACKEND_URL}/api/admin/encuestadores/${userToDelete.id}`, {
           method: 'DELETE',
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        }).catch(console.warn);
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ adminPassword })
+        });
+
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          if (data?.requiresPassword) {
+            setRequiresPassword(true);
+            setSurveysCount(data.totalEncuestas || 0);
+            setPasswordError(data.error || 'Ingresa tu contraseña de administrador para confirmar.');
+            setIsDeleting(false);
+            return;
+          }
+          setPasswordError(data?.error || 'Error al eliminar el encuestador.');
+          setIsDeleting(false);
+          return;
+        }
       }
+
       await dbService.deleteUsuario(userToDelete.id);
       setUserToDelete(null);
+      setAdminPassword('');
+      setPasswordError('');
+      setRequiresPassword(false);
       loadEncuestadores();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error al eliminar encuestador:', err);
+      setPasswordError(err.message || 'Error al procesar la eliminación');
     } finally {
       setIsDeleting(false);
     }
@@ -203,7 +255,7 @@ export default function EncuestadoresList() {
                   <button onClick={() => handleEdit(encuestador)} className="btn btn-icon btn-outline" title="Editar">
                     <Edit2 size={15} />
                   </button>
-                  <button onClick={() => setUserToDelete(encuestador)} className="btn btn-icon btn-outline" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)' }} title="Eliminar">
+                  <button onClick={() => handleOpenDeleteModal(encuestador)} className="btn btn-icon btn-outline" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)' }} title="Eliminar">
                     <Trash2 size={15} />
                   </button>
                 </div>
@@ -225,22 +277,49 @@ export default function EncuestadoresList() {
         title="Eliminar Encuestador"
         message={
           <>
-            ¿Estás seguro de que deseas eliminar a{' '}
+            ¿Estás seguro de que deseas eliminar al encuestador{' '}
             <strong style={{ color: 'var(--text-main)' }}>{userToDelete?.nombre}</strong> (
             <span style={{ color: 'var(--primary)', fontWeight: 600 }}>@{userToDelete?.usuario}</span>)?
-            <br />
-            <span style={{ fontSize: '0.85rem', color: '#ef4444', marginTop: '0.5rem', display: 'block' }}>
-              Esta acción eliminará al encuestador del sistema.
-            </span>
+            {surveysCount > 0 ? (
+              <div style={{
+                marginTop: '0.85rem',
+                padding: '0.75rem 1rem',
+                background: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                borderRadius: 'var(--radius-md)',
+                color: '#f59e0b',
+                fontSize: '0.85rem',
+                textAlign: 'left',
+                lineHeight: 1.4
+              }}>
+                ⚠️ <strong>Atención:</strong> Este encuestador tiene <strong>{surveysCount}</strong> encuestas registradas. Se reasignarán al Administrador General para preservar toda la información.
+              </div>
+            ) : (
+              <span style={{ fontSize: '0.85rem', color: '#ef4444', marginTop: '0.5rem', display: 'block' }}>
+                Esta acción eliminará al encuestador del sistema.
+              </span>
+            )}
           </>
         }
         confirmText="Sí, eliminar"
         cancelText="Cancelar"
         isDanger={true}
         isLoading={isDeleting}
+        requiresPassword={requiresPassword}
+        passwordValue={adminPassword}
+        onPasswordChange={(val) => {
+          setAdminPassword(val);
+          setPasswordError('');
+        }}
+        errorMessage={passwordError}
         onConfirm={handleConfirmDelete}
         onCancel={() => {
-          if (!isDeleting) setUserToDelete(null);
+          if (!isDeleting) {
+            setUserToDelete(null);
+            setAdminPassword('');
+            setPasswordError('');
+            setRequiresPassword(false);
+          }
         }}
       />
     </div>
