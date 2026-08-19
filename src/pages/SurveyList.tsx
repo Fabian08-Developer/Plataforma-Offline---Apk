@@ -11,8 +11,8 @@ export default function SurveyList() {
 
   const loadSurveys = async () => {
     try {
-      if (user?.id) {
-        const data = await dbService.getSurveysByEncuestador(user.id);
+      if (user) {
+        const data = await dbService.getSurveysByEncuestador(user.id, user.usuario);
         setSurveys(data);
       }
     } catch (error) {

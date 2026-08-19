@@ -87,8 +87,10 @@ export default function SurveyForm() {
       
       if (!isEditing) {
         finalData.encuestador_id = user?.id;
+        finalData.encuestador_usuario = user?.usuario;
       } else {
-        finalData.encuestador_id = formData.encuestador_id;
+        finalData.encuestador_id = formData.encuestador_id || user?.id;
+        finalData.encuestador_usuario = formData.encuestador_usuario || user?.usuario;
       }
 
       if (isEditing) {

@@ -20,8 +20,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const storedUser = localStorage.getItem('auth_user');
     const storedToken = localStorage.getItem('auth_token');
-    if (storedUser && storedToken) {
+    if (storedUser) {
       setUser(JSON.parse(storedUser));
+    }
+    if (storedToken) {
       setToken(storedToken);
     }
     setIsLoading(false);

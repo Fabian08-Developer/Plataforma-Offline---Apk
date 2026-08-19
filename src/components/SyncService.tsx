@@ -57,6 +57,9 @@ export default function SyncService() {
         console.log(`Sincronizando ${pendingSurveys.length} encuestas con el servidor VPS...`);
 
         const token = localStorage.getItem('auth_token');
+        const userStr = localStorage.getItem('auth_user');
+        const currentUser = userStr ? JSON.parse(userStr) : null;
+
         const headers: Record<string, string> = {
           'Content-Type': 'application/json'
         };
@@ -67,7 +70,10 @@ export default function SyncService() {
         const res = await fetch(`${BACKEND_URL}/api/sync`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ encuestas: pendingSurveys })
+          body: JSON.stringify({ 
+            encuestas: pendingSurveys,
+            usuario: currentUser?.usuario 
+          })
         });
 
         if (res.ok) {

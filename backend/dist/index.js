@@ -143,32 +143,65 @@ const handleSync = async (req, res) => {
             catch { /* token expirado → continuar */ }
         }
     }
-    const { encuestas } = req.body;
+    const { encuestas, usuario } = req.body;
     if (!Array.isArray(encuestas) || encuestas.length === 0) {
         return res.status(400).json({ error: 'Formato inválido o no hay encuestas para sincronizar' });
     }
     try {
-        let usuarioRespaldo = await prisma.usuario.findFirst({ orderBy: { id: 'asc' } });
-        if (!usuarioRespaldo) {
-            const defaultPass = await bcryptjs_1.default.hash('123456', 10);
-            usuarioRespaldo = await prisma.usuario.create({
-                data: { nombre: 'Administrador General', usuario: 'admin', password: defaultPass, rol: 'admin', estado: true },
-            });
+        let fallbackUser = null;
+        if (usuario) {
+            fallbackUser = await prisma.usuario.findUnique({ where: { usuario: String(usuario) } });
         }
-        const defaultUserId = usuarioRespaldo.id;
         const sincronizadasIds = [];
         for (const data of encuestas) {
             if (!data.documento_identidad)
                 continue;
-            const existe = await prisma.encuesta.findFirst({ where: { documento_identidad: String(data.documento_identidad) } });
+            let targetUserId = req.user?.id;
+            // 1. Si no hay token, buscar por el encuestador_usuario guardado en la encuesta
+            if (!targetUserId && data.encuestador_usuario) {
+                const userByUsername = await prisma.usuario.findUnique({ where: { usuario: String(data.encuestador_usuario) } });
+                if (userByUsername)
+                    targetUserId = userByUsername.id;
+            }
+            // 2. Si no, usar el usuario general que envió la petición de sincronización
+            if (!targetUserId && fallbackUser) {
+                targetUserId = fallbackUser.id;
+            }
+            // 3. Si no, verificar si data.encuestador_id existe en PostgreSQL
+            if (!targetUserId && data.encuestador_id) {
+                const userById = await prisma.usuario.findUnique({ where: { id: Number(data.encuestador_id) } });
+                if (userById)
+                    targetUserId = userById.id;
+            }
+            // 4. Último recurso: primer usuario administrador o primer usuario
+            if (!targetUserId) {
+                const defaultAdmin = await prisma.usuario.findFirst({ orderBy: { id: 'asc' } });
+                targetUserId = defaultAdmin ? defaultAdmin.id : 1;
+            }
+            // Verificar si la encuesta ya existe por documento
+            const existe = await prisma.encuesta.findFirst({
+                where: { documento_identidad: String(data.documento_identidad) }
+            });
             if (existe) {
-                sincronizadasIds.push(data.id);
+                await prisma.encuesta.update({
+                    where: { id: existe.id },
+                    data: {
+                        encuestador_id: Number(targetUserId),
+                        tipo_documento: String(data.tipo_documento || existe.tipo_documento),
+                        nombres: String(data.nombres || existe.nombres),
+                        apellidos: String(data.apellidos || existe.apellidos),
+                        telefono_1: String(data.telefono_1 || existe.telefono_1),
+                        telefono_2: data.telefono_2 ? String(data.telefono_2) : existe.telefono_2,
+                        telefono_3: data.telefono_3 ? String(data.telefono_3) : existe.telefono_3,
+                        direccion: String(data.direccion || existe.direccion),
+                        profesion: data.profesion ? String(data.profesion) : existe.profesion,
+                        fecha_registro: String(data.fecha_registro || existe.fecha_registro),
+                        estado_sincronizacion: 'sincronizado',
+                    }
+                });
+                sincronizadasIds.push(data.id || existe.id);
                 continue;
             }
-            let targetUserId = req.user?.id || data.encuestador_id || defaultUserId;
-            const userExists = await prisma.usuario.findUnique({ where: { id: Number(targetUserId) } });
-            if (!userExists)
-                targetUserId = defaultUserId;
             const nueva = await prisma.encuesta.create({
                 data: {
                     encuestador_id: Number(targetUserId),

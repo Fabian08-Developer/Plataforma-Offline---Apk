@@ -12,6 +12,7 @@ export interface User {
 export interface Survey {
   id?: number;
   encuestador_id?: number;
+  encuestador_usuario?: string;
   tipo_documento: string;
   documento_identidad: string;
   nombres: string;
@@ -80,6 +81,7 @@ class DatabaseService {
         CREATE TABLE IF NOT EXISTS encuestas (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           encuestador_id INTEGER,
+          encuestador_usuario TEXT,
           tipo_documento TEXT NOT NULL,
           documento_identidad TEXT NOT NULL,
           nombres TEXT NOT NULL,
@@ -95,6 +97,12 @@ class DatabaseService {
       `;
       
       await this.db.execute(schema);
+      try {
+        await this.db.execute('ALTER TABLE encuestas ADD COLUMN encuestador_usuario TEXT;');
+      } catch {
+        // Columna ya existe en tablas creadas previamente
+      }
+
       if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
       this.isInitialized = true;
     } catch (error) {
@@ -142,12 +150,13 @@ class DatabaseService {
   async addSurvey(survey: Survey): Promise<void> {
     const query = `
       INSERT INTO encuestas (
-        encuestador_id, tipo_documento, documento_identidad, nombres, apellidos, telefono_1, telefono_2, telefono_3,
+        encuestador_id, encuestador_usuario, tipo_documento, documento_identidad, nombres, apellidos, telefono_1, telefono_2, telefono_3,
         direccion, fecha_registro, profesion, estado_sincronizacion
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `;
     const values = [
       survey.encuestador_id || null,
+      survey.encuestador_usuario || '',
       survey.tipo_documento,
       survey.documento_identidad,
       survey.nombres,
@@ -167,12 +176,13 @@ class DatabaseService {
   async updateSurvey(id: number, survey: Survey): Promise<void> {
     const query = `
       UPDATE encuestas SET
-        encuestador_id = ?, tipo_documento = ?, documento_identidad = ?, nombres = ?, apellidos = ?, telefono_1 = ?, telefono_2 = ?, telefono_3 = ?,
+        encuestador_id = ?, encuestador_usuario = ?, tipo_documento = ?, documento_identidad = ?, nombres = ?, apellidos = ?, telefono_1 = ?, telefono_2 = ?, telefono_3 = ?,
         direccion = ?, fecha_registro = ?, profesion = ?, estado_sincronizacion = ?
       WHERE id = ?;
     `;
     const values = [
       survey.encuestador_id || null,
+      survey.encuestador_usuario || '',
       survey.tipo_documento,
       survey.documento_identidad,
       survey.nombres,
@@ -196,9 +206,21 @@ class DatabaseService {
     return result.values as Survey[] || [];
   }
   
-  async getSurveysByEncuestador(encuestador_id: number): Promise<Survey[]> {
-    const query = `SELECT * FROM encuestas WHERE encuestador_id = ? ORDER BY id DESC;`;
-    const result = await this.db.query(query, [encuestador_id]);
+  async getSurveysByEncuestador(encuestador_id?: number, encuestador_usuario?: string): Promise<Survey[]> {
+    let query = `SELECT * FROM encuestas WHERE 1=1`;
+    const params: any[] = [];
+    if (encuestador_usuario && encuestador_id) {
+      query += ` AND (encuestador_id = ? OR encuestador_usuario = ?)`;
+      params.push(encuestador_id, encuestador_usuario);
+    } else if (encuestador_id) {
+      query += ` AND encuestador_id = ?`;
+      params.push(encuestador_id);
+    } else if (encuestador_usuario) {
+      query += ` AND encuestador_usuario = ?`;
+      params.push(encuestador_usuario);
+    }
+    query += ` ORDER BY id DESC;`;
+    const result = await this.db.query(query, params);
     return result.values as Survey[] || [];
   }
 
