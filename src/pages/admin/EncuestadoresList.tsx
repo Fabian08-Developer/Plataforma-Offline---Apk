@@ -4,6 +4,7 @@ import { dbService } from '../../db';
 import type { User } from '../../db';
 import { BACKEND_URL } from '../../config';
 import { ArrowLeft, UserPlus, Trash2, Edit2, ChevronRight, Save, X } from 'lucide-react';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function EncuestadoresList() {
   const navigate = useNavigate();
@@ -13,6 +14,9 @@ export default function EncuestadoresList() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ nombre: '', usuario: '', password: '' });
+
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadEncuestadores = async () => {
     setLoading(true);
@@ -108,17 +112,25 @@ export default function EncuestadoresList() {
     setShowForm(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm('¿Estás seguro de eliminar este encuestador?')) {
+  const handleConfirmDelete = async () => {
+    if (!userToDelete?.id) return;
+    setIsDeleting(true);
+
+    try {
       if (navigator.onLine) {
         const token = localStorage.getItem('auth_token');
-        await fetch(`${BACKEND_URL}/api/admin/encuestadores/${id}`, {
+        await fetch(`${BACKEND_URL}/api/admin/encuestadores/${userToDelete.id}`, {
           method: 'DELETE',
           headers: token ? { 'Authorization': `Bearer ${token}` } : {}
         }).catch(console.warn);
       }
-      await dbService.deleteUsuario(id);
+      await dbService.deleteUsuario(userToDelete.id);
+      setUserToDelete(null);
       loadEncuestadores();
+    } catch (err) {
+      console.error('Error al eliminar encuestador:', err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -191,7 +203,7 @@ export default function EncuestadoresList() {
                   <button onClick={() => handleEdit(encuestador)} className="btn btn-icon btn-outline" title="Editar">
                     <Edit2 size={15} />
                   </button>
-                  <button onClick={() => handleDelete(encuestador.id!)} className="btn btn-icon btn-outline" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)' }} title="Eliminar">
+                  <button onClick={() => setUserToDelete(encuestador)} className="btn btn-icon btn-outline" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)' }} title="Eliminar">
                     <Trash2 size={15} />
                   </button>
                 </div>
@@ -206,6 +218,31 @@ export default function EncuestadoresList() {
           ))}
         </div>
       )}
+
+      {/* Modal de confirmación estilizado para eliminar */}
+      <ConfirmModal
+        isOpen={!!userToDelete}
+        title="Eliminar Encuestador"
+        message={
+          <>
+            ¿Estás seguro de que deseas eliminar a{' '}
+            <strong style={{ color: 'var(--text-main)' }}>{userToDelete?.nombre}</strong> (
+            <span style={{ color: 'var(--primary)', fontWeight: 600 }}>@{userToDelete?.usuario}</span>)?
+            <br />
+            <span style={{ fontSize: '0.85rem', color: '#ef4444', marginTop: '0.5rem', display: 'block' }}>
+              Esta acción eliminará al encuestador del sistema.
+            </span>
+          </>
+        }
+        confirmText="Sí, eliminar"
+        cancelText="Cancelar"
+        isDanger={true}
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          if (!isDeleting) setUserToDelete(null);
+        }}
+      />
     </div>
   );
 }
