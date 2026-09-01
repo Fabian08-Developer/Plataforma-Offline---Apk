@@ -11,7 +11,7 @@ import { APP_VERSION, BACKEND_URL } from '../config';
 async function isBackendReachable(): Promise<boolean> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const timeoutId = setTimeout(() => controller.abort(), 6000); // Aumentado a 6s para redes móviles lentas
     await fetch(`${BACKEND_URL}/api/version`, {
       method: 'HEAD',
       signal: controller.signal,
@@ -51,11 +51,12 @@ export default function SyncService() {
       }
     }, 1000);
 
-    // Periodic check every 20 seconds while online
+    // Periodic check every 20 seconds.
+    // IMPORTANTE: En Android WebView, navigator.onLine puede quedarse en false después de
+    // volver de modo avión/sin señal. Por eso intentamos siempre — isBackendReachable() lo
+    // valida de forma fiable con una petición HEAD real al servidor.
     const intervalTimer = setInterval(() => {
-      if (navigator.onLine) {
-        syncPendingData();
-      }
+      syncPendingData();
     }, 20000);
 
     return () => {
@@ -108,16 +109,30 @@ export default function SyncService() {
 
         if (res.ok) {
           const data = await res.json();
-          const idsProcesados = data.sincronizadasLocalIds || pendingSurveys.map(s => s.id).filter(Boolean);
 
-          for (const id of idsProcesados) {
-            if (id) {
-              await dbService.markAsSynchronized(id);
+          // Usar el nuevo campo 'sincronizadas' que incluye localId + documento_identidad
+          // para marcar correctamente en SQLite. Compatibilidad hacia atrás con versiones antiguas del backend.
+          if (Array.isArray(data.sincronizadas) && data.sincronizadas.length > 0) {
+            for (const entry of data.sincronizadas) {
+              await dbService.markAsSynchronized(entry.localId, entry.documento_identidad);
+            }
+          } else {
+            // Fallback: backend antiguo solo devuelve array plano de IDs locales
+            const docMap: Record<number | string, string> = {};
+            for (const s of pendingSurveys) {
+              if (s.id) docMap[s.id] = s.documento_identidad;
+            }
+            const idsProcesados = data.sincronizadasLocalIds || pendingSurveys.map((s: any) => s.id).filter(Boolean);
+            for (const id of idsProcesados) {
+              if (id) {
+                await dbService.markAsSynchronized(id, docMap[id]);
+              }
             }
           }
-          
-          console.log('Sincronización real completada exitosamente.');
+
+          console.log(`Sincronización completada: ${data.procesadas} encuestas. Errores: ${data.errores ?? 0}.`);
           window.dispatchEvent(new Event('surveys-updated'));
+
         } else {
           console.warn('El servidor respondió con error al sincronizar:', res.status);
         }

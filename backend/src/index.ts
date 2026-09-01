@@ -137,51 +137,64 @@ const handleSync = async (req: any, res: express.Response) => {
   if (!Array.isArray(encuestas) || encuestas.length === 0) {
     return res.status(400).json({ error: 'Formato inválido o no hay encuestas para sincronizar' });
   }
-  try {
-    let fallbackUser = null;
-    if (usuario) {
-      fallbackUser = await prisma.usuario.findUnique({ where: { usuario: String(usuario) } });
+
+  let fallbackUser = null;
+  if (usuario) {
+    fallbackUser = await prisma.usuario.findUnique({ where: { usuario: String(usuario) } }).catch(() => null);
+  }
+
+  /**
+   * Resuelve el ID de usuario válido para esta encuesta.
+   * Orden de prioridad: token JWT → encuestador_usuario → encuestador_id del dispositivo → fallbackUser → primer admin
+   * IMPORTANTE: el encuestador_id que llega del dispositivo es el ID local de SQLite, que NO
+   * coincide con el ID de PostgreSQL. Por eso lo validamos antes de usarlo.
+   */
+  const resolveTargetUserId = async (data: any): Promise<number> => {
+    // 1. ID del token JWT autenticado (más confiable)
+    if (req.user?.id) {
+      const userByToken = await prisma.usuario.findUnique({ where: { id: Number(req.user.id) } }).catch(() => null);
+      if (userByToken) return userByToken.id;
     }
+    // 2. Username guardado en la encuesta
+    if (data.encuestador_usuario) {
+      const userByUsername = await prisma.usuario.findUnique({ where: { usuario: String(data.encuestador_usuario) } }).catch(() => null);
+      if (userByUsername) return userByUsername.id;
+    }
+    // 3. Usuario general que envió la petición de sincronización
+    if (fallbackUser) return fallbackUser.id;
+    // 4. encuestador_id local del dispositivo (validado contra PostgreSQL)
+    if (data.encuestador_id) {
+      const userById = await prisma.usuario.findUnique({ where: { id: Number(data.encuestador_id) } }).catch(() => null);
+      if (userById) return userById.id;
+    }
+    // 5. Último recurso: primer usuario del sistema
+    const defaultAdmin = await prisma.usuario.findFirst({ orderBy: { id: 'asc' } }).catch(() => null);
+    return defaultAdmin ? defaultAdmin.id : 1;
+  };
 
-    const sincronizadasIds: any[] = [];
-    for (const data of encuestas) {
-      if (!data.documento_identidad) continue;
+  const sincronizadasIds: Array<{ localId: any; documento_identidad: string }> = [];
+  const errores: Array<{ documento_identidad: string; error: string }> = [];
 
-      let targetUserId = req.user?.id;
+  for (const data of encuestas) {
+    if (!data.documento_identidad) continue;
 
-      // 1. Si no hay token, buscar por el encuestador_usuario guardado en la encuesta
-      if (!targetUserId && data.encuestador_usuario) {
-        const userByUsername = await prisma.usuario.findUnique({ where: { usuario: String(data.encuestador_usuario) } });
-        if (userByUsername) targetUserId = userByUsername.id;
-      }
+    try {
+      const targetUserId = await resolveTargetUserId(data);
 
-      // 2. Si no, usar el usuario general que envió la petición de sincronización
-      if (!targetUserId && fallbackUser) {
-        targetUserId = fallbackUser.id;
-      }
-
-      // 3. Si no, verificar si data.encuestador_id existe en PostgreSQL
-      if (!targetUserId && data.encuestador_id) {
-        const userById = await prisma.usuario.findUnique({ where: { id: Number(data.encuestador_id) } });
-        if (userById) targetUserId = userById.id;
-      }
-
-      // 4. Último recurso: primer usuario administrador o primer usuario
-      if (!targetUserId) {
-        const defaultAdmin = await prisma.usuario.findFirst({ orderBy: { id: 'asc' } });
-        targetUserId = defaultAdmin ? defaultAdmin.id : 1;
-      }
-
-      // Verificar si la encuesta ya existe por documento
-      const existe = await prisma.encuesta.findFirst({ 
-        where: { documento_identidad: String(data.documento_identidad) } 
+      // Verificar si la encuesta ya existe por documento de identidad
+      const existe = await prisma.encuesta.findFirst({
+        where: { documento_identidad: String(data.documento_identidad) }
       });
 
       if (existe) {
+        // Actualizar datos de la encuesta pero PRESERVAR el encuestador_id original.
+        // Bug anterior: se sobreescribía encuestador_id con el usuario que sincroniza,
+        // causando que la encuesta "desapareciera" de la vista del encuestador original.
         await prisma.encuesta.update({
           where: { id: existe.id },
           data: {
-            encuestador_id: Number(targetUserId),
+            // Mantener el encuestador original; solo cambiar si el registro es del mismo usuario
+            encuestador_id: existe.encuestador_id || Number(targetUserId),
             tipo_documento: String(data.tipo_documento || existe.tipo_documento),
             nombres: String(data.nombres || existe.nombres),
             apellidos: String(data.apellidos || existe.apellidos),
@@ -194,7 +207,8 @@ const handleSync = async (req: any, res: express.Response) => {
             estado_sincronizacion: 'sincronizado',
           }
         });
-        sincronizadasIds.push(data.id || existe.id);
+        // Devolver el id local original del dispositivo + documento para que SQLite lo marque correctamente
+        sincronizadasIds.push({ localId: data.id ?? existe.id, documento_identidad: String(data.documento_identidad) });
         continue;
       }
 
@@ -214,14 +228,26 @@ const handleSync = async (req: any, res: express.Response) => {
           estado_sincronizacion: 'sincronizado',
         },
       });
-      sincronizadasIds.push(data.id || nueva.id);
+      sincronizadasIds.push({ localId: data.id ?? nueva.id, documento_identidad: String(data.documento_identidad) });
+
+    } catch (encuestaError: any) {
+      // Error individual: loguear pero NO interrumpir el resto del lote
+      console.error(`Error sincronizando encuesta con documento ${data.documento_identidad}:`, encuestaError.message);
+      errores.push({ documento_identidad: String(data.documento_identidad), error: encuestaError.message });
     }
-    res.json({ message: 'Sincronización exitosa', procesadas: sincronizadasIds.length, sincronizadasLocalIds: sincronizadasIds });
-  } catch (error: any) {
-    console.error('Error al sincronizar:', error);
-    res.status(500).json({ error: `Error interno: ${error.message}` });
   }
+
+  res.json({
+    message: errores.length === 0 ? 'Sincronización exitosa' : 'Sincronización parcial',
+    procesadas: sincronizadasIds.length,
+    errores: errores.length,
+    // Compatibilidad hacia atrás: array plano de IDs locales
+    sincronizadasLocalIds: sincronizadasIds.map(s => s.localId),
+    // Nuevo: array con id + documento_identidad para marcar correctamente en SQLite
+    sincronizadas: sincronizadasIds,
+  });
 };
+
 
 // ENCUESTADOR - Obtener mis encuestas registradas en el servidor
 const handleGetMisEncuestas = async (req: any, res: express.Response) => {

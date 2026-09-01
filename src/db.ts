@@ -259,9 +259,15 @@ class DatabaseService {
     return result.values as Survey[] || [];
   }
 
-  async markAsSynchronized(id: number): Promise<void> {
-    const query = `UPDATE encuestas SET estado_sincronizacion = 'sincronizado' WHERE id = ?;`;
-    await this.db.run(query, [id]);
+  async markAsSynchronized(id: number, documento_identidad?: string): Promise<void> {
+    // Intentar marcar por ID local primero
+    const byId = await this.db.query(`SELECT id FROM encuestas WHERE id = ? LIMIT 1;`, [id]);
+    if (byId.values && byId.values.length > 0) {
+      await this.db.run(`UPDATE encuestas SET estado_sincronizacion = 'sincronizado' WHERE id = ?;`, [id]);
+    } else if (documento_identidad) {
+      // Fallback: marcar por documento de identidad si el ID local no coincide con el ID del servidor
+      await this.db.run(`UPDATE encuestas SET estado_sincronizacion = 'sincronizado' WHERE documento_identidad = ?;`, [documento_identidad]);
+    }
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
   }
 

@@ -8,7 +8,7 @@ import { isPossiblePhoneNumber, validatePhoneNumberLength } from 'libphonenumber
 import 'react-phone-number-input/style.css';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { BACKEND_URL } from '../config';
+
 
 /**
  * Verifica si un número de teléfono supera la longitud máxima permitida.
@@ -59,24 +59,9 @@ export default function SurveyForm() {
   useEffect(() => {
     async function loadSurvey() {
       if (isEditing) {
-        try {
-          const authToken = token || localStorage.getItem('auth_token');
-          if (navigator.onLine && (user?.rol === 'admin' || authToken)) {
-            const res = await fetch(`${BACKEND_URL}/api/admin/encuestas/${id}`, {
-              headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
-            });
-            if (res.ok) {
-              const remoteSurvey = await res.json();
-              if (remoteSurvey) {
-                setFormData(remoteSurvey);
-                return;
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('Fallback a encuesta local SQLite:', err);
-        }
-
+        // Offline-first: cargar siempre desde SQLite local sin esperar red.
+        // Esto evita el bloqueo de red en modo offline y el error 403 al intentar
+        // cargar desde /api/admin/encuestas/ con un rol encuestador.
         const survey = await dbService.getSurveyById(Number(id));
         if (survey) {
           setFormData(survey);
@@ -84,7 +69,7 @@ export default function SurveyForm() {
       }
     }
     loadSurvey();
-  }, [id, isEditing, token, user?.rol]);
+  }, [id, isEditing]);
 
   const handleDocumentBlur = async () => {
     if (!isEditing && formData.documento_identidad && formData.documento_identidad.trim().length >= 5) {
@@ -147,7 +132,7 @@ export default function SurveyForm() {
     try {
       let finalData = { ...formData } as Survey;
       
-      let currentPhones = [formData.telefono_1, formData.telefono_2, formData.telefono_3];
+      const currentPhones = [formData.telefono_1, formData.telefono_2, formData.telefono_3];
       const phoneToProcess = isEditing ? newPhoneInput : formData.telefono_1;
       
       const updatedPhones = updatePhonesList(currentPhones, phoneToProcess);
@@ -155,64 +140,33 @@ export default function SurveyForm() {
       finalData.telefono_1 = updatedPhones[0] || '';
       finalData.telefono_2 = updatedPhones[1] || '';
       finalData.telefono_3 = updatedPhones[2] || '';
-      finalData.estado_sincronizacion = user?.rol === 'admin' ? 'sincronizado' : 'pendiente';
+
+      // OFFLINE-FIRST: siempre guardamos como 'pendiente' en SQLite local.
+      // El SyncService se encarga de enviarlo al servidor de forma segura cuando
+      // haya conexión. Esto corrige el bug donde el admin en offline quedaba
+      // marcado como 'sincronizado' sin haber llegado al servidor.
+      finalData.estado_sincronizacion = 'pendiente';
       
       if (!isEditing) {
         finalData.encuestador_id = user?.id;
         finalData.encuestador_usuario = user?.usuario;
       } else {
+        // Preservar el encuestador original; solo completar si faltaba
         finalData.encuestador_id = formData.encuestador_id || user?.id;
         finalData.encuestador_usuario = formData.encuestador_usuario || user?.usuario;
       }
 
       if (isEditing) {
-        if (navigator.onLine && (user?.rol === 'admin' || token)) {
-          const authToken = token || localStorage.getItem('auth_token');
-          await fetch(`${BACKEND_URL}/api/admin/encuestas/${id}`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-            },
-            body: JSON.stringify(finalData)
-          }).catch(console.warn);
-        }
+        // Guardar siempre en SQLite local como pendiente.
+        // El SyncService lo enviará al servidor (/api/sync) con la lógica correcta
+        // que preserva al encuestador original y maneja el ID remoto vs local.
         await dbService.updateSurvey(Number(id), finalData);
       } else {
-        if (navigator.onLine && (user?.rol === 'admin' || token)) {
-          const authToken = token || localStorage.getItem('auth_token');
-          try {
-            const res = await fetch(`${BACKEND_URL}/api/admin/encuestas`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-              },
-              body: JSON.stringify(finalData)
-            });
-            if (res.ok) {
-              const resData = await res.json();
-              if (resData.encuesta?.id) {
-                finalData.id = resData.encuesta.id;
-              }
-              finalData.estado_sincronizacion = 'sincronizado';
-            } else {
-              finalData.estado_sincronizacion = 'pendiente';
-            }
-          } catch (e) {
-            console.warn('Error enviando encuesta directa al backend:', e);
-            finalData.estado_sincronizacion = 'pendiente';
-          }
-        } else {
-          finalData.estado_sincronizacion = 'pendiente';
-        }
         await dbService.addSurvey(finalData);
       }
       
-      // Disparar evento para que el SyncService actúe de inmediato
-      if (navigator.onLine) {
-        window.dispatchEvent(new Event('trigger-sync'));
-      }
+      // Disparar sincronización siempre (SyncService valida la alcanzabilidad internamente)
+      window.dispatchEvent(new Event('trigger-sync'));
       
       toast.success(isEditing ? 'Encuesta actualizada con éxito' : 'Encuesta guardada con éxito');
 
