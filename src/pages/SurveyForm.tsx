@@ -33,7 +33,7 @@ function isPhoneTooLong(val: string): boolean {
 export default function SurveyForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, token } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const isEditing = !!id;
 
