@@ -124,6 +124,48 @@ const handleLogin = async (req: express.Request, res: express.Response) => {
   }
 };
 
+// ════════════════════════════════════════════════════════════════════════════════
+//  HELPER: Fusión de teléfonos con rotación MRU (Most Recently Used)
+//  Misma lógica que updatePhonesList() del frontend (src/services/phoneLogic.ts).
+//
+//  Reglas:
+//  1. Los teléfonos que vienen del dispositivo van PRIMERO (son los más recientes).
+//  2. Los teléfonos que ya existían en la BD se agregan después, sin duplicar.
+//  3. Se conservan máximo 3 teléfonos (el excedente se descarta).
+//
+//  Ejemplo:
+//    BD existente: ['300 111 1111', '', '']
+//    APK offline:  ['320 999 9999', '', '']
+//    Resultado:    ['320 999 9999', '300 111 1111', '']  ← nuevo es principal
+// ════════════════════════════════════════════════════════════════════════════════
+function mergePhones(
+  incoming: (string | null | undefined)[],
+  existing: (string | null | undefined)[]
+): [string, string, string] {
+  // Limpiar y eliminar vacíos
+  const newOnes  = incoming.map(p => (p || '').trim()).filter(Boolean);
+  const oldOnes  = existing.map(p => (p || '').trim()).filter(Boolean);
+
+  const combined: string[] = [];
+
+  // 1. Primero los nuevos (más recientes, vienen del encuestador en campo)
+  for (const phone of newOnes) {
+    if (!combined.includes(phone)) combined.push(phone);
+  }
+
+  // 2. Luego los que ya había en la BD (se empujan hacia abajo sin duplicar)
+  for (const phone of oldOnes) {
+    if (!combined.includes(phone)) combined.push(phone);
+  }
+
+  // 3. Máximo 3 teléfonos
+  return [
+    combined[0] || '',
+    combined[1] || '',
+    combined[2] || '',
+  ];
+}
+
 // SINCRONIZACIÓN
 const handleSync = async (req: any, res: express.Response) => {
   const authHeader = req.headers['authorization'];
@@ -195,8 +237,14 @@ const handleSync = async (req: any, res: express.Response) => {
         });
 
         if (existe) {
-          // ACTUALIZAR — pero PRESERVAR el encuestador_id original para no
-          // quitarle la encuesta al encuestador que la creó originalmente.
+          // ACTUALIZAR — PRESERVAR encuestador_id original Y COMBINAR teléfonos.
+          // Los teléfonos del encuestador de campo pasan a ser los principales;
+          // los que ya estaban en la BD bajan a posición secundaria sin perderse.
+          const [tel1, tel2, tel3] = mergePhones(
+            [data.telefono_1, data.telefono_2, data.telefono_3],
+            [existe.telefono_1, existe.telefono_2, existe.telefono_3]
+          );
+
           return await tx.encuesta.update({
             where: { id: existe.id },
             data: {
@@ -204,11 +252,11 @@ const handleSync = async (req: any, res: express.Response) => {
               tipo_documento: String(data.tipo_documento || existe.tipo_documento),
               nombres: String(data.nombres || existe.nombres),
               apellidos: String(data.apellidos || existe.apellidos),
-              telefono_1: String(data.telefono_1 || existe.telefono_1),
-              telefono_2: data.telefono_2 ? String(data.telefono_2) : existe.telefono_2,
-              telefono_3: data.telefono_3 ? String(data.telefono_3) : existe.telefono_3,
+              telefono_1: tel1,
+              telefono_2: tel2,
+              telefono_3: tel3,
               direccion: String(data.direccion || existe.direccion),
-              profesion: data.profesion ? String(data.profesion) : existe.profesion,
+              profesion: data.profesion ? String(data.profesion) : (existe.profesion || ''),
               fecha_registro: String(data.fecha_registro || existe.fecha_registro),
               estado_sincronizacion: 'sincronizado',
             }

@@ -192,17 +192,54 @@ export async function exportSurveysToExcel(
   // ── Autofilter en encabezados ─────────────────────────────────────────────────
   ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 13 } };
 
-  // ── Generar y descargar el archivo ────────────────────────────────────────────
+  // ── Generar buffer del archivo ────────────────────────────────────────────────
   const buffer    = await workbook.xlsx.writeBuffer();
-  const blob      = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-  const url  = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href  = url;
-  link.download = filename ?? `encuestas_export_${new Date().toISOString().split('T')[0]}.xlsx`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+
+  // ── Elegir estrategia de descarga según la plataforma ────────────────────────
+  const { Capacitor } = await import('@capacitor/core');
+
+  if (Capacitor.isNativePlatform()) {
+    // ── ANDROID (APK): no hay gestor de descargas en el WebView.
+    //    Se escribe el archivo en la carpeta de caché y se abre el diálogo
+    //    de "Compartir / Guardar en Archivos" del sistema operativo.
+    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+    const { Share } = await import('@capacitor/share');
+
+    // Convertir el buffer a Base64 para Filesystem.writeFile
+    const bytes  = new Uint8Array(buffer as ArrayBuffer);
+    let binary   = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    const base64 = btoa(binary);
+
+    const fname = filename ?? `encuestas_export_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+    // Guardar en caché temporal
+    const result = await Filesystem.writeFile({
+      path:      fname,
+      data:      base64,
+      directory: Directory.Cache,
+    });
+
+    // Abrir el diálogo de compartir/guardar del SO Android
+    await Share.share({
+      title:        'Exportar encuestas',
+      text:         'Archivo Excel con los registros de encuestas.',
+      url:          result.uri,
+      dialogTitle:  'Guardar o compartir el archivo Excel',
+    });
+
+  } else {
+    // ── WEB / ESCRITORIO: descarga estándar con <a download>
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href  = url;
+    link.download = filename ?? `encuestas_export_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 }
