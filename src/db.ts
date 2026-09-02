@@ -259,14 +259,35 @@ class DatabaseService {
     return result.values as Survey[] || [];
   }
 
-  async markAsSynchronized(id: number, documento_identidad?: string): Promise<void> {
-    // Intentar marcar por ID local primero
+  async markAsSynchronized(
+    id: number, 
+    documento_identidad?: string,
+    phones?: { telefono_1?: string; telefono_2?: string; telefono_3?: string }
+  ): Promise<void> {
     const byId = await this.db.query(`SELECT id FROM encuestas WHERE id = ? LIMIT 1;`, [id]);
-    if (byId.values && byId.values.length > 0) {
-      await this.db.run(`UPDATE encuestas SET estado_sincronizacion = 'sincronizado' WHERE id = ?;`, [id]);
-    } else if (documento_identidad) {
-      // Fallback: marcar por documento de identidad si el ID local no coincide con el ID del servidor
-      await this.db.run(`UPDATE encuestas SET estado_sincronizacion = 'sincronizado' WHERE documento_identidad = ?;`, [documento_identidad]);
+    const targetId = (byId.values && byId.values.length > 0) ? id : null;
+
+    if (phones && (phones.telefono_1 || phones.telefono_2 || phones.telefono_3)) {
+      const t1 = phones.telefono_1 || '';
+      const t2 = phones.telefono_2 || '';
+      const t3 = phones.telefono_3 || '';
+      if (targetId) {
+        await this.db.run(
+          `UPDATE encuestas SET estado_sincronizacion = 'sincronizado', telefono_1 = ?, telefono_2 = ?, telefono_3 = ? WHERE id = ?;`,
+          [t1, t2, t3, targetId]
+        );
+      } else if (documento_identidad) {
+        await this.db.run(
+          `UPDATE encuestas SET estado_sincronizacion = 'sincronizado', telefono_1 = ?, telefono_2 = ?, telefono_3 = ? WHERE documento_identidad = ?;`,
+          [t1, t2, t3, documento_identidad]
+        );
+      }
+    } else {
+      if (targetId) {
+        await this.db.run(`UPDATE encuestas SET estado_sincronizacion = 'sincronizado' WHERE id = ?;`, [targetId]);
+      } else if (documento_identidad) {
+        await this.db.run(`UPDATE encuestas SET estado_sincronizacion = 'sincronizado' WHERE documento_identidad = ?;`, [documento_identidad]);
+      }
     }
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
   }

@@ -127,6 +127,7 @@ export default function SurveyForm() {
             ...existing,
             fecha_registro: new Date().toISOString().split('T')[0]
           });
+          setNewPhoneInput('');
           setExistingFound(true);
         } else {
           setExistingFound(false);
@@ -148,7 +149,7 @@ export default function SurveyForm() {
     e.preventDefault();
 
     // Validación: Teléfono de contacto obligatorio y formato válido
-    if (!isEditing) {
+    if (!isEditing && !existingFound) {
       if (!formData.telefono_1 || formData.telefono_1.trim() === '') {
         setPhoneError('El teléfono de contacto es obligatorio.');
         document.querySelector<HTMLElement>('.phone-wrapper')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -180,7 +181,7 @@ export default function SurveyForm() {
       let finalData = { ...formData } as Survey;
       
       const currentPhones = [formData.telefono_1, formData.telefono_2, formData.telefono_3];
-      const phoneToProcess = isEditing ? newPhoneInput : formData.telefono_1;
+      const phoneToProcess = (isEditing || existingFound) ? newPhoneInput : formData.telefono_1;
       
       const updatedPhones = updatePhonesList(currentPhones, phoneToProcess);
       
@@ -194,7 +195,7 @@ export default function SurveyForm() {
       // marcado como 'sincronizado' sin haber llegado al servidor.
       finalData.estado_sincronizacion = 'pendiente';
       
-      if (!isEditing) {
+      if (!isEditing && !existingFound) {
         finalData.encuestador_id = user?.id;
         finalData.encuestador_usuario = user?.usuario;
       } else {
@@ -225,6 +226,9 @@ export default function SurveyForm() {
         }
         // Actualizar también en SQLite local si existe
         await dbService.updateSurvey(Number(id), finalData).catch(() => {});
+      } else if (existingFound && formData.id) {
+        // Si la persona ya existía localmente en SQLite, actualizar el registro existente
+        await dbService.updateSurvey(Number(formData.id), finalData).catch(() => {});
       } else {
         if (user?.rol === 'admin' && (navigator.onLine || token)) {
           const authToken = token || localStorage.getItem('auth_token');
@@ -364,10 +368,10 @@ export default function SurveyForm() {
         <div style={{ background: 'var(--background)', padding: '1.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
           <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Contacto</h3>
           
-          {isEditing ? (
+          {(isEditing || existingFound) ? (
             <>
               <div style={{ marginBottom: '1rem' }}>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Teléfonos actuales (Máx 3):</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Teléfonos registrados (Máx 3):</p>
                 <ul style={{ paddingLeft: '1.5rem', marginBottom: '1rem', color: 'var(--text-main)', fontSize: '0.95rem' }}>
                   {formData.telefono_1 && <li>{formData.telefono_1} (Principal)</li>}
                   {formData.telefono_2 && <li>{formData.telefono_2}</li>}
@@ -388,7 +392,7 @@ export default function SurveyForm() {
                     if (val && val.trim() !== '') setPhoneError('');
                   }} 
                   className={`form-input phone-wrapper${phoneError ? ' phone-input-error' : ''}`}
-                  placeholder="Ej. 300 123 4567" 
+                  placeholder="Ej. 300 123 4567 (opcional si no cambia)" 
                 />
                 {phoneError && (
                   <p style={{
@@ -403,7 +407,7 @@ export default function SurveyForm() {
                   </p>
                 )}
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                  Al guardar, este número pasará a ser el principal (Contacto 1) y los demás se ajustarán automáticamente.
+                  Si ingresas un nuevo número, pasará a ser el principal (Contacto 1) y los anteriores se conservarán automáticamente.
                 </p>
               </div>
             </>

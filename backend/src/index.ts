@@ -214,7 +214,13 @@ const handleSync = async (req: any, res: express.Response) => {
     return defaultAdmin ? defaultAdmin.id : 1;
   };
 
-  const sincronizadasIds: Array<{ localId: any; documento_identidad: string }> = [];
+  const sincronizadasIds: Array<{ 
+    localId: any; 
+    documento_identidad: string; 
+    telefono_1?: string; 
+    telefono_2?: string; 
+    telefono_3?: string; 
+  }> = [];
   const errores: Array<{ documento_identidad: string; error: string }> = [];
 
   for (const data of encuestas) {
@@ -286,7 +292,13 @@ const handleSync = async (req: any, res: express.Response) => {
         timeout:  10000 // timeout máx. 10s para completarla
       });
 
-      sincronizadasIds.push({ localId: data.id ?? resultado.id, documento_identidad: docIdentidad });
+      sincronizadasIds.push({ 
+        localId: data.id ?? resultado.id, 
+        documento_identidad: docIdentidad,
+        telefono_1: resultado.telefono_1 || '',
+        telefono_2: resultado.telefono_2 || '',
+        telefono_3: resultado.telefono_3 || '',
+      });
 
     } catch (encuestaError: any) {
       // Error individual: loguear pero NO interrumpir el resto del lote

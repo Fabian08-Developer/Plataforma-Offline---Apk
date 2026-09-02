@@ -114,7 +114,15 @@ export default function SyncService() {
           // para marcar correctamente en SQLite. Compatibilidad hacia atrás con versiones antiguas del backend.
           if (Array.isArray(data.sincronizadas) && data.sincronizadas.length > 0) {
             for (const entry of data.sincronizadas) {
-              await dbService.markAsSynchronized(entry.localId, entry.documento_identidad);
+              await dbService.markAsSynchronized(
+                entry.localId, 
+                entry.documento_identidad,
+                {
+                  telefono_1: entry.telefono_1,
+                  telefono_2: entry.telefono_2,
+                  telefono_3: entry.telefono_3,
+                }
+              );
             }
           } else {
             // Fallback: backend antiguo solo devuelve array plano de IDs locales
