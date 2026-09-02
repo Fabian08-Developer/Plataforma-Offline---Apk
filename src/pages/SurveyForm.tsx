@@ -60,9 +60,28 @@ export default function SurveyForm() {
   useEffect(() => {
     async function loadSurvey() {
       if (isEditing) {
-        // Offline-first: cargar siempre desde SQLite local sin esperar red.
-        // Esto evita el bloqueo de red en modo offline y el error 403 al intentar
-        // cargar desde /api/admin/encuestas/ con un rol encuestador.
+        // 1. Si es administrador (o tiene token) y hay red, cargar del servidor centralizado
+        //    ya que los IDs mostrados en el panel de administración provienen de PostgreSQL.
+        if (user?.rol === 'admin' || token) {
+          try {
+            const authToken = token || localStorage.getItem('auth_token');
+            const res = await fetch(`${BACKEND_URL}/api/admin/encuestas/${id}`, {
+              headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+              signal: AbortSignal.timeout(5000),
+            });
+            if (res.ok) {
+              const remoteSurvey = await res.json();
+              if (remoteSurvey && remoteSurvey.documento_identidad) {
+                setFormData(remoteSurvey);
+                return;
+              }
+            }
+          } catch (err) {
+            console.warn('No se pudo cargar desde el servidor, buscando en SQLite local:', err);
+          }
+        }
+
+        // 2. Cargar desde SQLite local (para encuestadores o si está offline)
         const survey = await dbService.getSurveyById(Number(id));
         if (survey) {
           setFormData(survey);
@@ -70,7 +89,7 @@ export default function SurveyForm() {
       }
     }
     loadSurvey();
-  }, [id, isEditing]);
+  }, [id, isEditing, user?.rol, token]);
 
   const handleDocumentBlur = async () => {
     if (!isEditing && formData.documento_identidad && formData.documento_identidad.trim().length >= 5) {
@@ -185,11 +204,51 @@ export default function SurveyForm() {
       }
 
       if (isEditing) {
-        // Guardar siempre en SQLite local como pendiente.
-        // El SyncService lo enviará al servidor (/api/sync) con la lógica correcta
-        // que preserva al encuestador original y maneja el ID remoto vs local.
-        await dbService.updateSurvey(Number(id), finalData);
+        if (user?.rol === 'admin' && (navigator.onLine || token)) {
+          const authToken = token || localStorage.getItem('auth_token');
+          try {
+            const res = await fetch(`${BACKEND_URL}/api/admin/encuestas/${id}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+              },
+              body: JSON.stringify(finalData),
+              signal: AbortSignal.timeout(6000),
+            });
+            if (res.ok) {
+              finalData.estado_sincronizacion = 'sincronizado';
+            }
+          } catch (err) {
+            console.warn('No se pudo actualizar directamente en el servidor:', err);
+          }
+        }
+        // Actualizar también en SQLite local si existe
+        await dbService.updateSurvey(Number(id), finalData).catch(() => {});
       } else {
+        if (user?.rol === 'admin' && (navigator.onLine || token)) {
+          const authToken = token || localStorage.getItem('auth_token');
+          try {
+            const res = await fetch(`${BACKEND_URL}/api/admin/encuestas`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+              },
+              body: JSON.stringify(finalData),
+              signal: AbortSignal.timeout(6000),
+            });
+            if (res.ok) {
+              const resData = await res.json();
+              if (resData.encuesta?.id) {
+                finalData.id = resData.encuesta.id;
+              }
+              finalData.estado_sincronizacion = 'sincronizado';
+            }
+          } catch (err) {
+            console.warn('Error enviando encuesta directa admin:', err);
+          }
+        }
         await dbService.addSurvey(finalData);
       }
       
