@@ -180,55 +180,65 @@ const handleSync = async (req: any, res: express.Response) => {
 
     try {
       const targetUserId = await resolveTargetUserId(data);
+      const docIdentidad = String(data.documento_identidad).trim();
 
-      // Verificar si la encuesta ya existe por documento de identidad
-      const existe = await prisma.encuesta.findFirst({
-        where: { documento_identidad: String(data.documento_identidad) }
-      });
-
-      if (existe) {
-        // Actualizar datos de la encuesta pero PRESERVAR el encuestador_id original.
-        // Bug anterior: se sobreescribía encuestador_id con el usuario que sincroniza,
-        // causando que la encuesta "desapareciera" de la vista del encuestador original.
-        await prisma.encuesta.update({
-          where: { id: existe.id },
-          data: {
-            // Mantener el encuestador original; solo cambiar si el registro es del mismo usuario
-            encuestador_id: existe.encuestador_id || Number(targetUserId),
-            tipo_documento: String(data.tipo_documento || existe.tipo_documento),
-            nombres: String(data.nombres || existe.nombres),
-            apellidos: String(data.apellidos || existe.apellidos),
-            telefono_1: String(data.telefono_1 || existe.telefono_1),
-            telefono_2: data.telefono_2 ? String(data.telefono_2) : existe.telefono_2,
-            telefono_3: data.telefono_3 ? String(data.telefono_3) : existe.telefono_3,
-            direccion: String(data.direccion || existe.direccion),
-            profesion: data.profesion ? String(data.profesion) : existe.profesion,
-            fecha_registro: String(data.fecha_registro || existe.fecha_registro),
-            estado_sincronizacion: 'sincronizado',
-          }
+      /**
+       * Upsert atómico con transaction SERIALIZABLE.
+       * Previene que dos dispositivos que sincronizan el mismo documento_identidad
+       * simultáneamente generen un duplicado en PostgreSQL.
+       * Con isolationLevel Serializable, si Tx2 ve que Tx1 ya insertó el mismo registro,
+       * PostgreSQL cancela Tx2 con un error de serialización en lugar de dejar pasar el CREATE.
+       */
+      const resultado = await prisma.$transaction(async (tx) => {
+        const existe = await tx.encuesta.findFirst({
+          where: { documento_identidad: docIdentidad }
         });
-        // Devolver el id local original del dispositivo + documento para que SQLite lo marque correctamente
-        sincronizadasIds.push({ localId: data.id ?? existe.id, documento_identidad: String(data.documento_identidad) });
-        continue;
-      }
 
-      const nueva = await prisma.encuesta.create({
-        data: {
-          encuestador_id: Number(targetUserId),
-          tipo_documento: String(data.tipo_documento || 'C.C'),
-          documento_identidad: String(data.documento_identidad),
-          nombres: String(data.nombres || ''),
-          apellidos: String(data.apellidos || ''),
-          telefono_1: String(data.telefono_1 || ''),
-          telefono_2: data.telefono_2 ? String(data.telefono_2) : '',
-          telefono_3: data.telefono_3 ? String(data.telefono_3) : '',
-          direccion: String(data.direccion || ''),
-          profesion: data.profesion ? String(data.profesion) : '',
-          fecha_registro: String(data.fecha_registro || new Date().toISOString().split('T')[0]),
-          estado_sincronizacion: 'sincronizado',
-        },
+        if (existe) {
+          // ACTUALIZAR — pero PRESERVAR el encuestador_id original para no
+          // quitarle la encuesta al encuestador que la creó originalmente.
+          return await tx.encuesta.update({
+            where: { id: existe.id },
+            data: {
+              encuestador_id: existe.encuestador_id || Number(targetUserId),
+              tipo_documento: String(data.tipo_documento || existe.tipo_documento),
+              nombres: String(data.nombres || existe.nombres),
+              apellidos: String(data.apellidos || existe.apellidos),
+              telefono_1: String(data.telefono_1 || existe.telefono_1),
+              telefono_2: data.telefono_2 ? String(data.telefono_2) : existe.telefono_2,
+              telefono_3: data.telefono_3 ? String(data.telefono_3) : existe.telefono_3,
+              direccion: String(data.direccion || existe.direccion),
+              profesion: data.profesion ? String(data.profesion) : existe.profesion,
+              fecha_registro: String(data.fecha_registro || existe.fecha_registro),
+              estado_sincronizacion: 'sincronizado',
+            }
+          });
+        }
+
+        // CREAR nueva encuesta
+        return await tx.encuesta.create({
+          data: {
+            encuestador_id: Number(targetUserId),
+            tipo_documento: String(data.tipo_documento || 'C.C'),
+            documento_identidad: docIdentidad,
+            nombres: String(data.nombres || ''),
+            apellidos: String(data.apellidos || ''),
+            telefono_1: String(data.telefono_1 || ''),
+            telefono_2: data.telefono_2 ? String(data.telefono_2) : '',
+            telefono_3: data.telefono_3 ? String(data.telefono_3) : '',
+            direccion: String(data.direccion || ''),
+            profesion: data.profesion ? String(data.profesion) : '',
+            fecha_registro: String(data.fecha_registro || new Date().toISOString().split('T')[0]),
+            estado_sincronizacion: 'sincronizado',
+          },
+        });
+      }, {
+        isolationLevel: 'Serializable',
+        maxWait: 5000,  // espera máx. 5s para adquirir la tx
+        timeout:  10000 // timeout máx. 10s para completarla
       });
-      sincronizadasIds.push({ localId: data.id ?? nueva.id, documento_identidad: String(data.documento_identidad) });
+
+      sincronizadasIds.push({ localId: data.id ?? resultado.id, documento_identidad: docIdentidad });
 
     } catch (encuestaError: any) {
       // Error individual: loguear pero NO interrumpir el resto del lote
@@ -248,8 +258,25 @@ const handleSync = async (req: any, res: express.Response) => {
   });
 };
 
+// ENCUESTADOR - Verificar si un documento ya está registrado en el servidor (cualquier encuestador)
+// Usado por el APK para detectar duplicados ANTES de guardar una nueva encuesta offline.
+const handleVerificarDocumento = async (req: any, res: express.Response) => {
+  try {
+    const doc = String(req.params.documento || '').trim();
+    if (doc.length < 5) return res.status(400).json({ error: 'Documento demasiado corto' });
 
-// ENCUESTADOR - Obtener mis encuestas registradas en el servidor
+    const encuesta = await prisma.encuesta.findFirst({
+      where: { documento_identidad: doc },
+    });
+
+    if (!encuesta) return res.status(404).json(null);
+    res.json(encuesta);
+  } catch (error) {
+    console.error('Error verificando documento:', error);
+    res.status(500).json({ error: 'Error al verificar documento' });
+  }
+};
+
 const handleGetMisEncuestas = async (req: any, res: express.Response) => {
   try {
     const userId = req.user?.id;
@@ -540,8 +567,12 @@ app.post('/login',     handleLogin);
 app.post('/api/sync', handleSync);
 app.post('/sync',     handleSync);
 
+app.get('/api/encuestas/verificar-documento/:documento', authenticateToken, handleVerificarDocumento);
+app.get('/encuestas/verificar-documento/:documento',     authenticateToken, handleVerificarDocumento);
+
 app.get('/api/encuestas/mis-encuestas', authenticateToken, handleGetMisEncuestas);
 app.get('/encuestas/mis-encuestas',     authenticateToken, handleGetMisEncuestas);
+
 
 app.get('/api/admin/encuestadores', authenticateToken, requireAdmin, handleGetEncuestadores);
 app.get('/admin/encuestadores',     authenticateToken, requireAdmin, handleGetEncuestadores);

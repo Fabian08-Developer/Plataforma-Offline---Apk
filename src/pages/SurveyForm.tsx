@@ -8,6 +8,7 @@ import { isPossiblePhoneNumber, validatePhoneNumberLength } from 'libphonenumber
 import 'react-phone-number-input/style.css';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { BACKEND_URL } from '../config';
 
 
 /**
@@ -33,7 +34,7 @@ function isPhoneTooLong(val: string): boolean {
 export default function SurveyForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { toast } = useToast();
   const isEditing = !!id;
 
@@ -74,7 +75,34 @@ export default function SurveyForm() {
   const handleDocumentBlur = async () => {
     if (!isEditing && formData.documento_identidad && formData.documento_identidad.trim().length >= 5) {
       try {
-        const existing = await dbService.getSurveyByDocumento(formData.documento_identidad.trim());
+        const doc = formData.documento_identidad.trim();
+
+        // 1. Buscar primero en SQLite local (funciona offline)
+        let existing: Survey | undefined = await dbService.getSurveyByDocumento(doc);
+
+        // 2. Si no está localmente Y hay conexión, consultar el servidor.
+        //    Esto detecta encuestas registradas por otros encuestadores o por el admin,
+        //    que no están en el SQLite local de este dispositivo.
+        if (!existing && navigator.onLine) {
+          try {
+            const authToken = token || localStorage.getItem('auth_token');
+            const res = await fetch(`${BACKEND_URL}/api/encuestas/verificar-documento/${doc}`, {
+              headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+              signal: AbortSignal.timeout(5000)
+            });
+            if (res.ok) {
+              const remoteData = await res.json();
+              if (remoteData?.documento_identidad) {
+                existing = remoteData as Survey;
+                // Guardar en SQLite local como 'sincronizado' para uso offline futuro
+                await dbService.addSurvey({ ...remoteData, estado_sincronizacion: 'sincronizado' });
+              }
+            }
+          } catch {
+            // Fallo silencioso: si no se puede consultar el servidor, continuar con datos locales
+          }
+        }
+
         if (existing) {
           setFormData({
             ...existing,
