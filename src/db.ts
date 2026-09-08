@@ -222,6 +222,16 @@ class DatabaseService {
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
   }
 
+  /**
+   * Devuelve solo los campos mínimos necesarios para la detección de similitud.
+   * Más eficiente que getAllSurveys() cuando solo se necesita comparar documentos/nombres.
+   */
+  async getAllSurveysLight(): Promise<{ id: number; documento_identidad: string; nombres: string; apellidos: string; tipo_documento: string }[]> {
+    const query = `SELECT id, documento_identidad, nombres, apellidos, tipo_documento FROM encuestas ORDER BY id DESC;`;
+    const result = await this.db.query(query);
+    return result.values as any[] || [];
+  }
+
   async getAllSurveys(): Promise<Survey[]> {
     const query = `SELECT * FROM encuestas ORDER BY id DESC;`;
     const result = await this.db.query(query);

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { dbService, type Survey } from '../db';
 import { updatePhonesList } from '../services/phoneLogic';
-import { ArrowLeft, Save, Loader2, Info } from 'lucide-react';
+import { checkSimilarity, type SimilarityMatch } from '../services/similarityUtils';
+import { ArrowLeft, Save, Loader2, Info, AlertTriangle, X } from 'lucide-react';
 import PhoneInput from 'react-phone-number-input';
 import { isPossiblePhoneNumber, validatePhoneNumberLength } from 'libphonenumber-js';
 import 'react-phone-number-input/style.css';
@@ -56,6 +57,10 @@ export default function SurveyForm() {
   const [newPhoneInput, setNewPhoneInput] = useState('');
   const [existingFound, setExistingFound] = useState(false);
   const [phoneError, setPhoneError] = useState('');
+  // Estado para advertencias de posibles duplicados
+  const [similarityWarnings, setSimilarityWarnings] = useState<SimilarityMatch[]>([]);
+  const [showSimilarityModal, setShowSimilarityModal] = useState(false);
+  const [checkingSimilarity, setCheckingSimilarity] = useState(false);
 
   useEffect(() => {
     async function loadSurvey() {
@@ -129,9 +134,73 @@ export default function SurveyForm() {
           });
           setNewPhoneInput('');
           setExistingFound(true);
-        } else {
-          setExistingFound(false);
+          // Si ya existe coincidencia exacta, limpiar advertencias de similitud
+          setSimilarityWarnings([]);
+          setShowSimilarityModal(false);
+          return;
         }
+
+        setExistingFound(false);
+
+        // ── DETECCIÓN DE SIMILITUD ────────────────────────────────────────────
+        // Si no hay coincidencia exacta, buscar registros similares para alertar
+        // al encuestador de un posible error de digitación.
+        //
+        // OFFLINE: Siempre se compara contra los datos del SQLite local.
+        // ONLINE:  Además se consulta el servidor para detectar registros de
+        //          otros dispositivos que aún no están en el SQLite local.
+        setCheckingSimilarity(true);
+        try {
+          // Paso A: Obtener datos ligeros del SQLite local (funciona siempre, sin red)
+          const localLight = await dbService.getAllSurveysLight();
+
+          // Paso B: Si hay conexión, ampliar con datos del servidor
+          let remoteLight: typeof localLight = [];
+          if (navigator.onLine) {
+            try {
+              const authToken = token || localStorage.getItem('auth_token');
+              const res = await fetch(
+                `${BACKEND_URL}/api/encuestas/buscar-similares/${encodeURIComponent(doc)}`,
+                {
+                  headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+                  signal: AbortSignal.timeout(5000),
+                }
+              );
+              if (res.ok) {
+                remoteLight = await res.json();
+              }
+            } catch {
+              // Sin conexión real o servidor caído → solo datos locales
+            }
+          }
+
+          // Combinar local + remoto sin duplicar (por documento_identidad)
+          const localDocs = new Set(localLight.map(s => s.documento_identidad));
+          const combined = [
+            ...localLight,
+            ...remoteLight.filter(r => !localDocs.has(r.documento_identidad)),
+          ];
+
+          const matches = checkSimilarity(
+            doc,
+            formData.nombres || '',
+            formData.apellidos || '',
+            combined
+          );
+
+          if (matches.length > 0) {
+            setSimilarityWarnings(matches);
+            setShowSimilarityModal(true);
+          } else {
+            setSimilarityWarnings([]);
+            setShowSimilarityModal(false);
+          }
+        } catch (simErr) {
+          console.warn('Error en verificación de similitud:', simErr);
+        } finally {
+          setCheckingSimilarity(false);
+        }
+
       } catch (err) {
         console.warn('Error al verificar documento existente:', err);
       }
@@ -276,6 +345,104 @@ export default function SurveyForm() {
 
   return (
     <div className="page-view container" style={{ paddingTop: '2rem' }}>
+
+      {/* ── Modal de advertencia de posible duplicado ─────────────────────── */}
+      {showSimilarityModal && similarityWarnings.length > 0 && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 10000,
+          background: 'rgba(0,0,0,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '1rem',
+          backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid rgba(251,191,36,0.4)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '1.5rem',
+            maxWidth: '480px',
+            width: '100%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            animation: 'fadeIn 0.2s',
+          }}>
+            {/* Encabezado */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{
+                background: 'rgba(251,191,36,0.15)',
+                borderRadius: '50%',
+                padding: '0.6rem',
+                display: 'flex',
+              }}>
+                <AlertTriangle size={24} color="#f59e0b" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', color: 'var(--text-main)' }}>
+                  Posible registro duplicado
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  {navigator.onLine ? 'Verificado en servidor y base local' : 'Verificado en base de datos local (sin conexión)'}
+                </p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+              Se encontraron <strong>{similarityWarnings.length}</strong> registro{similarityWarnings.length > 1 ? 's' : ''} similar{similarityWarnings.length > 1 ? 'es' : ''} al documento <strong>{formData.documento_identidad}</strong>:
+            </p>
+
+            {/* Lista de similares */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.25rem', maxHeight: '220px', overflowY: 'auto' }}>
+              {similarityWarnings.map((match, i) => (
+                <div key={i} style={{
+                  background: match.level === 'high'
+                    ? 'rgba(239,68,68,0.08)'
+                    : 'rgba(251,191,36,0.08)',
+                  border: `1px solid ${match.level === 'high' ? 'rgba(239,68,68,0.3)' : 'rgba(251,191,36,0.3)'}`,
+                  borderRadius: 'var(--radius-md)',
+                  padding: '0.65rem 0.85rem',
+                  fontSize: '0.85rem',
+                }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.2rem' }}>
+                    {match.survey.nombres} {match.survey.apellidos}
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    {match.survey.tipo_documento || 'Doc'}: <strong>{match.survey.documento_identidad}</strong>
+                  </div>
+                  <div style={{ color: match.level === 'high' ? '#ef4444' : '#f59e0b', fontSize: '0.78rem', marginTop: '0.25rem' }}>
+                    ⚠ {match.reason}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Acciones */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <button
+                onClick={() => setShowSimilarityModal(false)}
+                className="btn btn-outline"
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                <X size={16} /> Cancelar y revisar el documento
+              </button>
+              <button
+                onClick={() => {
+                  setShowSimilarityModal(false);
+                  setSimilarityWarnings([]);
+                }}
+                className="btn btn-primary"
+                style={{
+                  width: '100%', justifyContent: 'center',
+                  background: 'rgba(251,191,36,0.2)',
+                  border: '1px solid rgba(251,191,36,0.5)',
+                  color: '#f59e0b'
+                }}
+              >
+                Continuar de todas formas (es una persona diferente)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
         <button onClick={() => navigate(-1)} className="btn btn-icon btn-outline">
           <ArrowLeft size={20} />
@@ -320,10 +487,17 @@ export default function SurveyForm() {
                 onChange={(e) => {
                   const val = e.target.value.replace(/\D/g, '');
                   setFormData({...formData, documento_identidad: val});
+                  // Limpiar advertencias si el usuario corrige el número
+                  if (similarityWarnings.length > 0) setSimilarityWarnings([]);
                 }} 
                 onBlur={handleDocumentBlur}
                 maxLength={15}
                 className="form-input" placeholder="Ej. 123456789" style={{ width: '70%', flex: 1 }} />
+              {checkingSimilarity && (
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem', display: 'block' }}>
+                  🔍 Verificando similitud...
+                </span>
+              )}
             </div>
           </div>
 

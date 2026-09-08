@@ -166,6 +166,43 @@ function mergePhones(
   ];
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+//  HELPER: Distancia de Levenshtein (igual que en el frontend / similarityUtils.ts)
+//  Se usa en el backend para detectar posibles duplicados durante la sincronización
+//  y en el endpoint /buscar-similares.
+// ════════════════════════════════════════════════════════════════════════════════
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b[i - 1] === a[j - 1]) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+function normalizeText(text: string): string {
+  return (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // SINCRONIZACIÓN
 const handleSync = async (req: any, res: express.Response) => {
   const authHeader = req.headers['authorization'];
@@ -222,6 +259,7 @@ const handleSync = async (req: any, res: express.Response) => {
     telefono_3?: string; 
   }> = [];
   const errores: Array<{ documento_identidad: string; error: string }> = [];
+  const advertencias: Array<{ documento_identidad: string; similares: Array<{ documento_identidad: string; nombres: string; apellidos: string; razon: string }> }> = [];
 
   for (const data of encuestas) {
     if (!data.documento_identidad) continue;
@@ -270,6 +308,34 @@ const handleSync = async (req: any, res: express.Response) => {
         }
 
         // CREAR nueva encuesta
+        // Antes de crear, verificar similitud contra registros existentes
+        const todosExistentes = await tx.encuesta.findMany({
+          select: { documento_identidad: true, nombres: true, apellidos: true }
+        });
+
+        const simAdv: Array<{ documento_identidad: string; nombres: string; apellidos: string; razon: string }> = [];
+        const newDocNorm = docIdentidad;
+        const newFullNameNorm = normalizeText(`${data.nombres || ''} ${data.apellidos || ''}`);
+
+        for (const ex of todosExistentes) {
+          if (ex.documento_identidad === docIdentidad) continue;
+          const docDist = levenshtein(newDocNorm, ex.documento_identidad);
+          const existingNameNorm = normalizeText(`${ex.nombres} ${ex.apellidos}`);
+          const nameDist = levenshtein(newFullNameNorm, existingNameNorm);
+
+          if (docDist <= 2) {
+            simAdv.push({ ...ex, razon: `Documento difiere en ${docDist} carácter(es)` });
+          } else if (newFullNameNorm.length > 3 && existingNameNorm === newFullNameNorm) {
+            simAdv.push({ ...ex, razon: 'Nombre completo idéntico con documento diferente' });
+          } else if (newFullNameNorm.length > 5 && existingNameNorm.length > 5 && nameDist <= 3) {
+            simAdv.push({ ...ex, razon: `Nombre muy similar (${nameDist} carácter(es) de diferencia)` });
+          }
+        }
+
+        if (simAdv.length > 0) {
+          advertencias.push({ documento_identidad: docIdentidad, similares: simAdv });
+        }
+
         return await tx.encuesta.create({
           data: {
             encuestador_id: Number(targetUserId),
@@ -315,6 +381,8 @@ const handleSync = async (req: any, res: express.Response) => {
     sincronizadasLocalIds: sincronizadasIds.map(s => s.localId),
     // Nuevo: array con id + documento_identidad para marcar correctamente en SQLite
     sincronizadas: sincronizadasIds,
+    // Advertencias de posibles duplicados detectados durante el sync
+    advertencias,
   });
 };
 
@@ -334,6 +402,43 @@ const handleVerificarDocumento = async (req: any, res: express.Response) => {
   } catch (error) {
     console.error('Error verificando documento:', error);
     res.status(500).json({ error: 'Error al verificar documento' });
+  }
+};
+
+// ENCUESTADOR - Buscar registros con documento o nombre similar al indicado
+// Permite detectar posibles duplicados cuando el número tiene 1-2 dígitos distintos
+// o el nombre es casi idéntico. Funciona en modo online para complementar la
+// búsqueda local (offline) del SQLite del dispositivo.
+const handleBuscarSimilares = async (req: any, res: express.Response) => {
+  try {
+    const doc = String(req.params.documento || '').trim();
+    if (doc.length < 4) return res.status(400).json({ error: 'Documento demasiado corto' });
+
+    // Traer todos los registros con sus campos mínimos
+    const todos = await prisma.encuesta.findMany({
+      select: {
+        id: true,
+        documento_identidad: true,
+        nombres: true,
+        apellidos: true,
+        tipo_documento: true,
+      },
+    });
+
+    const similares = todos.filter((ex) => {
+      // Omitir coincidencias exactas (ya las maneja verificar-documento)
+      if (ex.documento_identidad === doc) return false;
+
+      const docDist = levenshtein(doc, ex.documento_identidad);
+      if (docDist <= 2) return true;
+
+      return false; // El frontend ya hace la comparación de nombres con los datos locales
+    });
+
+    res.json(similares);
+  } catch (error) {
+    console.error('Error buscando similares:', error);
+    res.status(500).json({ error: 'Error al buscar registros similares' });
   }
 };
 
@@ -629,6 +734,9 @@ app.post('/sync',     handleSync);
 
 app.get('/api/encuestas/verificar-documento/:documento', authenticateToken, handleVerificarDocumento);
 app.get('/encuestas/verificar-documento/:documento',     authenticateToken, handleVerificarDocumento);
+
+app.get('/api/encuestas/buscar-similares/:documento', authenticateToken, handleBuscarSimilares);
+app.get('/encuestas/buscar-similares/:documento',     authenticateToken, handleBuscarSimilares);
 
 app.get('/api/encuestas/mis-encuestas', authenticateToken, handleGetMisEncuestas);
 app.get('/encuestas/mis-encuestas',     authenticateToken, handleGetMisEncuestas);

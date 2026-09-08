@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { dbService, type Survey } from '../db';
-import { Plus, User, Calendar, MapPin, Phone, WifiOff, Wifi, IdCard, LogOut } from 'lucide-react';
+import { Plus, User, Calendar, MapPin, Phone, WifiOff, Wifi, IdCard, LogOut, RefreshCw } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { BACKEND_URL } from '../config';
 
 export default function SurveyList() {
   const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [reloading, setReloading] = useState(false);
   const { user, token, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -77,6 +78,15 @@ export default function SurveyList() {
     navigate('/login');
   };
 
+  const handleReload = async () => {
+    setReloading(true);
+    try {
+      await loadSurveys();
+    } finally {
+      setReloading(false);
+    }
+  };
+
   return (
     <div className="page-view container" style={{ paddingTop: '2rem' }}>
       <header className="app-header" style={{ marginBottom: '2rem', borderRadius: 'var(--radius-lg)' }}>
@@ -84,6 +94,15 @@ export default function SurveyList() {
           <h1 className="app-title truncate-text" style={{ fontSize: '1.75rem', margin: 0 }}>Mis Encuestas</h1>
           <p className="truncate-text" style={{ color: 'var(--text-muted)', margin: 0 }}>Bienvenido, {user?.nombre}</p>
         </div>
+        <button
+          onClick={handleReload}
+          disabled={reloading}
+          className="btn btn-icon btn-outline"
+          title="Recargar encuestas"
+          style={{ color: 'var(--primary)', borderColor: 'rgba(var(--primary-rgb, 99,102,241),0.3)' }}
+        >
+          <RefreshCw size={20} className={reloading ? 'animate-spin' : ''} />
+        </button>
         <button onClick={handleLogout} className="btn btn-icon btn-outline" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }} title="Cerrar sesión">
           <LogOut size={20} />
         </button>
