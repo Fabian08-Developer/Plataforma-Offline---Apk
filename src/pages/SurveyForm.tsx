@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { dbService, type Survey } from '../db';
 import { updatePhonesList } from '../services/phoneLogic';
 import { checkSimilarity, type SimilarityMatch } from '../services/similarityUtils';
-import { ArrowLeft, Save, Loader2, Info, AlertTriangle, X } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Info, AlertTriangle, X, Edit3, ArrowRight } from 'lucide-react';
 import PhoneInput from 'react-phone-number-input';
 import { isPossiblePhoneNumber, validatePhoneNumberLength } from 'libphonenumber-js';
 import 'react-phone-number-input/style.css';
@@ -343,101 +343,183 @@ export default function SurveyForm() {
     }
   };
 
+  const handleCorrectDocument = () => {
+    setShowSimilarityModal(false);
+    setTimeout(() => {
+      const input = document.getElementById('input_documento_identidad') as HTMLInputElement | null;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 100);
+  };
+
   return (
     <div className="page-view container" style={{ paddingTop: '2rem' }}>
 
-      {/* ── Modal de advertencia de posible duplicado ─────────────────────── */}
+      {/* ── Modal de advertencia de posible duplicado (Rediseñado) ─────────── */}
       {showSimilarityModal && similarityWarnings.length > 0 && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 10000,
-          background: 'rgba(0,0,0,0.6)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '1rem',
-          backdropFilter: 'blur(4px)',
-        }}>
-          <div style={{
-            background: 'var(--surface)',
-            border: '1px solid rgba(251,191,36,0.4)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '1.5rem',
-            maxWidth: '480px',
-            width: '100%',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-            animation: 'fadeIn 0.2s',
-          }}>
-            {/* Encabezado */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div style={{
-                background: 'rgba(251,191,36,0.15)',
-                borderRadius: '50%',
-                padding: '0.6rem',
-                display: 'flex',
-              }}>
-                <AlertTriangle size={24} color="#f59e0b" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', color: 'var(--text-main)' }}>
-                  Posible registro duplicado
-                </h3>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  {navigator.onLine ? 'Verificado en servidor y base local' : 'Verificado en base de datos local (sin conexión)'}
-                </p>
-              </div>
-            </div>
+        <div className="similarity-modal-overlay">
+          <div className="similarity-modal-card">
+            {/* Barra superior con gradiente de atención */}
+            <div className="similarity-top-stripe" />
 
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-              Se encontraron <strong>{similarityWarnings.length}</strong> registro{similarityWarnings.length > 1 ? 's' : ''} similar{similarityWarnings.length > 1 ? 'es' : ''} al documento <strong>{formData.documento_identidad}</strong>:
-            </p>
-
-            {/* Lista de similares */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.25rem', maxHeight: '220px', overflowY: 'auto' }}>
-              {similarityWarnings.map((match, i) => (
-                <div key={i} style={{
-                  background: match.level === 'high'
-                    ? 'rgba(239,68,68,0.08)'
-                    : 'rgba(251,191,36,0.08)',
-                  border: `1px solid ${match.level === 'high' ? 'rgba(239,68,68,0.3)' : 'rgba(251,191,36,0.3)'}`,
-                  borderRadius: 'var(--radius-md)',
-                  padding: '0.65rem 0.85rem',
-                  fontSize: '0.85rem',
-                }}>
-                  <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.2rem' }}>
-                    {match.survey.nombres} {match.survey.apellidos}
+            <div className="similarity-modal-body">
+              {/* Encabezado */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                  <div style={{
+                    width: '46px',
+                    height: '46px',
+                    borderRadius: '14px',
+                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(239, 68, 68, 0.12))',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 12px rgba(245, 158, 11, 0.15)',
+                    flexShrink: 0
+                  }}>
+                    <AlertTriangle size={24} color="#f59e0b" />
                   </div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                    {match.survey.tipo_documento || 'Doc'}: <strong>{match.survey.documento_identidad}</strong>
-                  </div>
-                  <div style={{ color: match.level === 'high' ? '#ef4444' : '#f59e0b', fontSize: '0.78rem', marginTop: '0.25rem' }}>
-                    ⚠ {match.reason}
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
+                      Posible registro duplicado
+                    </h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginTop: '0.25rem' }}>
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%',
+                        background: navigator.onLine ? '#10b981' : '#f59e0b',
+                        display: 'inline-block'
+                      }} />
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        {navigator.onLine ? 'Verificado en servidor y base local' : 'Verificado en base local (sin conexión)'}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
 
-            {/* Acciones */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <button
-                onClick={() => setShowSimilarityModal(false)}
-                className="btn btn-outline"
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                <X size={16} /> Cancelar y revisar el documento
-              </button>
-              <button
-                onClick={() => {
-                  setShowSimilarityModal(false);
-                  setSimilarityWarnings([]);
-                }}
-                className="btn btn-primary"
-                style={{
-                  width: '100%', justifyContent: 'center',
-                  background: 'rgba(251,191,36,0.2)',
-                  border: '1px solid rgba(251,191,36,0.5)',
-                  color: '#f59e0b'
-                }}
-              >
-                Continuar de todas formas (es una persona diferente)
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSimilarityModal(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: '0.4rem',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Cerrar"
+                >
+                  <X size={19} />
+                </button>
+              </div>
+
+              {/* Comparador de documento digitado */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.7rem 0.95rem',
+                background: 'var(--background)',
+                border: '1px solid var(--border)',
+                borderRadius: '0.75rem',
+                marginBottom: '1rem',
+                fontSize: '0.85rem',
+              }}>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  {similarityWarnings.length === 1
+                    ? 'Se detectó 1 registro similar a:'
+                    : `Se detectaron ${similarityWarnings.length} registros similares a:`}
+                </span>
+                <span style={{
+                  fontFamily: 'monospace',
+                  fontWeight: 700,
+                  fontSize: '0.95rem',
+                  color: 'var(--text-main)',
+                  background: 'var(--surface)',
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: '0.4rem',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow-sm)'
+                }}>
+                  {formData.tipo_documento || 'Doc'}: {formData.documento_identidad}
+                </span>
+              </div>
+
+              {/* Lista de registros coincidentes */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '1.25rem', maxHeight: '240px', overflowY: 'auto' }}>
+                {similarityWarnings.map((match, i) => (
+                  <div key={i} className="similarity-item-card">
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                        <div style={{
+                          width: '36px', height: '36px', borderRadius: '50%',
+                          background: 'rgba(79, 70, 229, 0.1)', color: 'var(--primary)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0, fontWeight: 700, fontSize: '0.85rem'
+                        }}>
+                          {(match.survey.nombres?.[0] || 'U').toUpperCase()}{(match.survey.apellidos?.[0] || '').toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: 1.25 }}>
+                            {match.survey.nombres} {match.survey.apellidos}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span>{match.survey.tipo_documento || 'Doc'}:</span>
+                            <strong style={{ fontFamily: 'monospace', fontSize: '0.88rem', color: 'var(--text-main)' }}>
+                              {match.survey.documento_identidad}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        padding: '0.2rem 0.5rem',
+                        borderRadius: '999px',
+                        background: 'rgba(0,0,0,0.05)',
+                        color: 'var(--text-muted)',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        En base de datos
+                      </span>
+                    </div>
+
+                    <div className={`similarity-reason-badge ${match.level}`}>
+                      <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+                      <span>{match.reason}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Botones de acción */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <button
+                  type="button"
+                  onClick={handleCorrectDocument}
+                  className="btn-similarity-correct"
+                >
+                  <Edit3 size={17} /> Corregir número de documento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSimilarityModal(false);
+                    setSimilarityWarnings([]);
+                  }}
+                  className="btn-similarity-continue"
+                >
+                  Continuar de todas formas (es una persona diferente) <ArrowRight size={15} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -483,7 +565,7 @@ export default function SurveyForm() {
                 <option value="NIT">NIT</option>
                 <option value="PAS">PAS</option>
               </select>
-              <input required type="text" name="documento_identidad" value={formData.documento_identidad || ''} 
+              <input required type="text" id="input_documento_identidad" name="documento_identidad" value={formData.documento_identidad || ''} 
                 onChange={(e) => {
                   const val = e.target.value.replace(/\D/g, '');
                   setFormData({...formData, documento_identidad: val});

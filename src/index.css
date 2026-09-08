@@ -463,3 +463,159 @@ h1, h2, h3, h4 {
   border-color: #ef4444 !important;
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25) !important;
 }
+
+/* ── Modal de Duplicados / Similitud ────────────────────────────────────────── */
+@keyframes modalOverlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modalCardIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.similarity-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  animation: modalOverlayIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.similarity-modal-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 1.25rem;
+  width: 100%;
+  max-width: 500px;
+  overflow: hidden;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  animation: modalCardIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.similarity-top-stripe {
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(90deg, #f59e0b, #ef4444, #f59e0b);
+}
+
+.similarity-modal-body {
+  padding: 1.5rem;
+}
+
+@media (max-width: 640px) {
+  .similarity-modal-body {
+    padding: 1.25rem;
+  }
+}
+
+.similarity-item-card {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  padding: 0.9rem 1rem;
+  transition: all 0.2s ease;
+}
+
+.similarity-item-card:hover {
+  border-color: rgba(245, 158, 11, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.similarity-reason-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.35;
+  margin-top: 0.5rem;
+}
+
+.similarity-reason-badge.high {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.similarity-reason-badge.moderate {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+@media (prefers-color-scheme: dark) {
+  .similarity-reason-badge.moderate {
+    color: #fbbf24;
+  }
+}
+
+.btn-similarity-correct {
+  background: var(--text-main);
+  color: var(--surface);
+  border: none;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  width: 100%;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.btn-similarity-correct:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+}
+
+.btn-similarity-continue {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  width: 100%;
+  font-size: 0.88rem;
+  transition: all 0.2s ease;
+}
+
+.btn-similarity-continue:hover {
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--text-main);
+  border-color: var(--text-muted);
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-similarity-continue:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
+

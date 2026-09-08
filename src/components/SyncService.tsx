@@ -246,44 +246,87 @@ export default function SyncService() {
           transform: 'translateX(-50%)',
           zIndex: 9998,
           background: 'var(--surface)',
-          border: '1px solid rgba(251,191,36,0.5)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '1rem 1.25rem',
-          maxWidth: '420px',
+          border: '1px solid rgba(245, 158, 11, 0.35)',
+          borderRadius: '1.25rem',
+          maxWidth: '460px',
           width: 'calc(100% - 2rem)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-          animation: 'fadeIn 0.3s',
+          boxShadow: '0 20px 50px -10px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.05)',
+          overflow: 'hidden',
+          animation: 'modalCardIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-            <AlertTriangle size={20} color="#f59e0b" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ flex: 1 }}>
-              <p style={{ margin: 0, fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)' }}>
-                ⚠ Posibles duplicados detectados al sincronizar
-              </p>
-              <p style={{ margin: '0.3rem 0 0.6rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                {syncWarnings.length} encuesta{syncWarnings.length > 1 ? 's' : ''} sincronizada{syncWarnings.length > 1 ? 's' : ''} podría{syncWarnings.length > 1 ? 'n' : ''} ser duplicada{syncWarnings.length > 1 ? 's' : ''}. Revisa el panel de administración.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '140px', overflowY: 'auto' }}>
-                {syncWarnings.map((warn, i) => (
-                  <div key={i} style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    <span style={{ color: '#f59e0b', fontWeight: 600 }}>Doc {warn.documento_identidad}</span>
-                    {' '}→ similar a:{' '}
-                    {warn.similares.map((s, j) => (
-                      <span key={j} style={{ color: 'var(--text-main)' }}>
-                        {s.nombres} {s.apellidos} ({s.documento_identidad}){j < warn.similares.length - 1 ? ', ' : ''}
-                      </span>
-                    ))}
-                  </div>
-                ))}
+          <div style={{ height: '3px', background: 'linear-gradient(90deg, #f59e0b, #ef4444)' }} />
+          <div style={{ padding: '1.1rem 1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem' }}>
+              <div style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, rgba(245,158,11,0.18), rgba(239,68,68,0.12))',
+                border: '1px solid rgba(245,158,11,0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <AlertTriangle size={20} color="#f59e0b" />
               </div>
+
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
+                  Posibles duplicados detectados al sincronizar
+                </p>
+                <p style={{ margin: '0.25rem 0 0.7rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  {syncWarnings.length === 1
+                    ? 'Se sincronizó 1 encuesta que coincide estrechamente con registros en el servidor.'
+                    : `Se sincronizaron ${syncWarnings.length} encuestas que coinciden estrechamente con registros en el servidor.`}
+                </p>
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.45rem',
+                  maxHeight: '140px',
+                  overflowY: 'auto',
+                  background: 'var(--background)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.65rem',
+                  padding: '0.65rem 0.85rem'
+                }}>
+                  {syncWarnings.map((warn, i) => (
+                    <div key={i} style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                      <span style={{ color: '#d97706', fontWeight: 700, fontFamily: 'monospace' }}>Doc {warn.documento_identidad}</span>
+                      {' '}→ coincide con:{' '}
+                      {warn.similares.map((s, j) => (
+                        <span key={j} style={{ color: 'var(--text-main)', fontWeight: 500 }}>
+                          {s.nombres} {s.apellidos} ({s.documento_identidad}){j < warn.similares.length - 1 ? ', ' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowSyncWarning(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0.3rem',
+                  borderRadius: '50%',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  transition: 'background 0.15s ease'
+                }}
+                title="Cerrar notificación"
+              >
+                <X size={18} />
+              </button>
             </div>
-            <button
-              onClick={() => setShowSyncWarning(false)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: 'var(--text-muted)', flexShrink: 0 }}
-              title="Cerrar"
-            >
-              <X size={18} />
-            </button>
           </div>
         </div>
       )}
