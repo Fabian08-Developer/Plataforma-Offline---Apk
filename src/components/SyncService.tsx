@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { dbService } from '../db';
 import { Wifi, AlertTriangle, X } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import UpdateModal from './UpdateModal';
 import { APP_VERSION, BACKEND_URL } from '../config';
 import { reconciliarEncuestasEliminadas } from '../services/reconciliation';
@@ -194,7 +195,10 @@ export default function SyncService() {
       syncingRef.current = false;
     }
 
-    // --- Revisar actualizaciones de versión de forma silenciosa ---
+    // --- Revisar actualizaciones de versión de forma silenciosa (solo en el APK) ---
+    // La web siempre se sirve en su última versión: ofrecerle un APK no la actualiza, y una actualización
+    // obligatoria taparía el login y bloquearía el acceso al panel de administración.
+    if (!Capacitor.isNativePlatform()) return;
     try {
       const response = await fetch(`${BACKEND_URL}/api/version`);
       if (response.ok) {
