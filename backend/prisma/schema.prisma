@@ -22,7 +22,7 @@ model Encuesta {
   encuestador_id        Int
   encuestador           Usuario  @relation(fields: [encuestador_id], references: [id])
   tipo_documento        String
-  documento_identidad   String
+  documento_identidad   String   @unique
   nombres               String
   apellidos             String
   telefono_1            String
@@ -33,6 +33,23 @@ model Encuesta {
   fecha_registro        String
   estado_sincronizacion String   @default("sincronizado")
   sincronizado_en       DateTime @default(now())
+  // Última modificación de los datos de la encuesta: resuelve conflictos de sincronización (gana el más reciente)
+  actualizado_en        DateTime?
+}
+
+// Captura que llegó con una cédula ya registrada por OTRO encuestador. El admin revisa ambas versiones.
+// Sin relaciones: el aviso debe sobrevivir si la encuesta o el encuestador se eliminan.
+model AvisoCedula {
+  id                  Int      @id @default(autoincrement())
+  documento_identidad String
+  encuesta_id         Int
+  encuestador_id      Int
+  datos_recibidos     Json
+  datos_previos       Json
+  creado_en           DateTime @default(now())
+  resuelto            Boolean  @default(false)
+
+  @@index([resuelto])
 }
 
 model AppVersion {

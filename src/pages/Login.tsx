@@ -37,42 +37,40 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // 1. Intentar autenticar primero con el backend VPS si estamos online
+      // 1. Autenticar con el backend si hay conexión
       if (navigator.onLine) {
+        let res: Response | null = null;
         try {
-          const res = await fetch(`${BACKEND_URL}/api/login`, {
+          res = await fetch(`${BACKEND_URL}/api/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ usuario, password })
           });
-
-          if (res.ok) {
-            const data = await res.json();
-            // Asegurar que el usuario exista en la base de datos local SQLite
-            let localUser = await dbService.getUserByCredentials(usuario);
-            if (!localUser) {
-              await dbService.addUsuario({
-                nombre: data.user.nombre,
-                usuario: data.user.usuario,
-                password: password,
-                rol: data.user.rol
-              });
-              localUser = await dbService.getUserByCredentials(usuario);
-            }
-            
-            login(localUser || data.user, data.token);
-            navigate(data.user.rol === 'admin' ? '/admin' : '/');
-            return;
-          }
         } catch (backendErr) {
-          console.warn('Backend login fallback a SQLite local:', backendErr);
+          console.warn('Backend no disponible, se intenta acceso sin conexión:', backendErr);
+        }
+
+        if (res?.ok) {
+          const data = await res.json();
+          // Se guarda el usuario con la contraseña como hash: así podrá entrar sin conexión más adelante
+          const localUser = await dbService.guardarUsuarioTrasLoginEnLinea(data.user, password);
+          login(localUser, data.token);
+          navigate(data.user.rol === 'admin' ? '/admin' : '/');
+          return;
+        }
+
+        // El servidor respondió con un rechazo: no se usan credenciales locales antiguas
+        if (res && res.status < 500) {
+          const data = await res.json().catch(() => null);
+          setError(data?.error || 'Usuario o contraseña incorrectos.');
+          return;
         }
       }
 
-      // 2. Fallback offline: Autenticación local con SQLite
-      const user = await dbService.getUserByCredentials(usuario, password);
+      // 2. Sin conexión: verificación contra el hash guardado en SQLite
+      const user = await dbService.verifyLocalCredentials(usuario, password);
       if (!user) {
-        setError('Usuario o contraseña incorrectos.');
+        setError('Usuario o contraseña incorrectos. Si es su primer inicio de sesión, conéctese a internet.');
         return;
       }
 

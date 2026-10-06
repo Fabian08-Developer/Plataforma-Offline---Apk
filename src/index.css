@@ -16,8 +16,12 @@
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
+  --radius-xs: 0.375rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.85rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.5rem;
+  --radius-full: 9999px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -203,26 +207,29 @@ h1, h2, h3, h4 {
 /* List / Grid */
 .survey-list {
   display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  padding: 1.5rem;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  padding: 0;
 }
 
 @media (max-width: 640px) {
   .survey-list {
     grid-template-columns: 1fr;
-    padding: 1rem 0;
+    gap: 1rem;
+    padding: 0;
   }
 }
 
 .survey-card {
   position: relative;
   overflow: hidden;
+  border-radius: var(--radius-lg);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
 }
 
 .survey-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-lg);
+  transform: translateY(-3px);
+  box-shadow: 0 14px 30px -8px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(99, 102, 241, 0.35);
 }
 
 /* Badges */
@@ -376,31 +383,38 @@ h1, h2, h3, h4 {
   flex-direction: column;
   justify-content: space-between;
   gap: 1.25rem;
-  padding: 1.25rem;
+  padding: 1.35rem;
   border-radius: var(--radius-lg);
   position: relative;
   overflow: hidden;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.encuestador-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 30px -8px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(99, 102, 241, 0.35);
 }
 
 .encuestador-card-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .encuestador-avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: rgba(79, 70, 229, 0.12);
-  color: var(--primary);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1.25rem;
   flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
 }
 
 .encuestador-info {
@@ -409,8 +423,8 @@ h1, h2, h3, h4 {
 }
 
 .encuestador-nombre {
-  font-size: 1.1rem;
-  font-weight: 600;
+  font-size: 1.15rem;
+  font-weight: 700;
   margin: 0 0 0.25rem 0;
   color: var(--text-main);
   word-break: break-word;
@@ -422,7 +436,7 @@ h1, h2, h3, h4 {
   color: var(--text-muted);
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.35rem;
   word-break: break-all;
 }
 
@@ -453,6 +467,21 @@ h1, h2, h3, h4 {
   justify-content: center;
 }
 
+@keyframes pulse-status-dot {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.5;
+  }
+}
+
+.pulse-dot {
+  animation: pulse-status-dot 2s ease-in-out infinite;
+}
+
 /* ── PhoneInput: estado de error ────────────────────────────────────────────── */
 .phone-input-error {
   border-color: #ef4444 !important;
@@ -462,6 +491,16 @@ h1, h2, h3, h4 {
 .phone-input-error:focus-within {
   border-color: #ef4444 !important;
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25) !important;
+}
+
+/* ── Animaciones Utilitarias ────────────────────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 0.8s linear infinite;
 }
 
 /* ── Modal de Duplicados / Similitud ────────────────────────────────────────── */

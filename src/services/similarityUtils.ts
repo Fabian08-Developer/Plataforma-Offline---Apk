@@ -100,17 +100,20 @@ export function checkSimilarity(
   existing: SurveyLight[]
 ): SimilarityMatch[] {
   const matches: SimilarityMatch[] = [];
-  const docNorm = newDoc.trim();
-  const fullNameNorm = normalizeText(`${newNombres} ${newApellidos}`);
+  const docNorm = (newDoc || '').trim();
+  const fullNameNorm = normalizeText(`${newNombres || ''} ${newApellidos || ''}`);
 
   for (const survey of existing) {
-    const existingDocNorm = survey.documento_identidad.trim();
+    const existingDocNorm = (survey.documento_identidad || '').trim();
+
+    // Saltar si alguno no tiene documento
+    if (!existingDocNorm || !docNorm) continue;
 
     // Saltar coincidencias exactas (ya las maneja la búsqueda de duplicado exacto)
     if (existingDocNorm === docNorm) continue;
 
     const docDistance = levenshtein(docNorm, existingDocNorm);
-    const existingFullName = normalizeText(`${survey.nombres} ${survey.apellidos}`);
+    const existingFullName = normalizeText(`${survey.nombres || ''} ${survey.apellidos || ''}`);
     const nameDistance = levenshtein(fullNameNorm, existingFullName);
 
     // Criterio 1: Documento casi idéntico (1 o 2 caracteres diferentes)

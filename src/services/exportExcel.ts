@@ -16,6 +16,7 @@ export interface SurveyExportRow {
   direccion?: string;
   profesion?: string;
   fecha_registro?: string;
+  hora_registro?: string;
   encuestadorNombre?: string;
   estado_sincronizacion?: string;
 }
@@ -78,13 +79,14 @@ export async function exportSurveysToExcel(
     { key: 'telefono3',    width: 18 },
     { key: 'direccion',    width: 30 },
     { key: 'profesion',    width: 20 },
-    { key: 'fecha',        width: 20 },
+    { key: 'fecha',        width: 16 },
+    { key: 'hora',         width: 12 },
     { key: 'encuestador',  width: 22 },
     { key: 'estado',       width: 16 },
   ];
 
   // ── Fila 1: Título principal ─────────────────────────────────────────────────
-  ws.mergeCells('A1:M1');
+  ws.mergeCells('A1:N1');
   const titleCell = ws.getCell('A1');
   titleCell.value = 'Reporte de Encuestas';
   titleCell.font  = { name: 'Calibri', size: 16, bold: true, color: { argb: COLOR.titleFont } };
@@ -93,7 +95,7 @@ export async function exportSurveysToExcel(
   ws.getRow(1).height = 36;
 
   // ── Fila 2: Subtítulo con fecha de generación ────────────────────────────────
-  ws.mergeCells('A2:M2');
+  ws.mergeCells('A2:N2');
   const subtitleCell = ws.getCell('A2');
   subtitleCell.value = `Generado el ${new Date().toLocaleString('es-CO', {
     year: 'numeric', month: 'long', day: 'numeric',
@@ -111,7 +113,7 @@ export async function exportSurveysToExcel(
   const HEADERS = [
     'ID', 'Tipo Doc.', 'Documento', 'Nombres', 'Apellidos',
     'Teléfono 1', 'Teléfono 2', 'Teléfono 3', 'Dirección',
-    'Profesión', 'Fecha Registro', 'Encuestador', 'Estado',
+    'Profesión', 'Fecha Registro', 'Hora', 'Encuestador', 'Estado',
   ];
 
   const headerRow = ws.getRow(4);
@@ -140,6 +142,7 @@ export async function exportSurveysToExcel(
       s.direccion         ?? '',
       s.profesion         ?? '',
       s.fecha_registro    ?? '',
+      s.hora_registro     ?? '',
       s.encuestadorNombre ?? 'Desconocido',
       s.estado_sincronizacion ?? 'sincronizado',
     ];
@@ -158,7 +161,7 @@ export async function exportSurveysToExcel(
       cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
 
       // Columna de Estado: color según valor
-      if (colNumber === 13) {
+      if (colNumber === 14) {
         const estado = (cell.value as string ?? '').toLowerCase();
         const isSynced = estado === 'sincronizado' || estado === 'synced';
         cell.font = {
@@ -168,8 +171,8 @@ export async function exportSurveysToExcel(
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
       }
 
-      // Columna ID: centrar
-      if (colNumber === 1) {
+      // Columnas centradas: ID (1), Tipo Doc (2), Fecha (11), Hora (12)
+      if (colNumber === 1 || colNumber === 2 || colNumber === 11 || colNumber === 12) {
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
       }
     });

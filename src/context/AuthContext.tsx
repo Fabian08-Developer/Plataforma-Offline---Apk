@@ -21,7 +21,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedUser = localStorage.getItem('auth_user');
     const storedToken = localStorage.getItem('auth_token');
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      // Limpia sesiones guardadas por versiones anteriores que sí incluían la contraseña
+      const { password: _password, ...sesion } = JSON.parse(storedUser) as User;
+      setUser(sesion);
+      localStorage.setItem('auth_user', JSON.stringify(sesion));
     }
     if (storedToken) {
       setToken(storedToken);
@@ -30,12 +33,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = (userData: User, authToken?: string) => {
-    setUser(userData);
+    // Nunca se guarda la contraseña (ni su hash) en la sesión del navegador
+    const { password: _password, ...sesion } = userData;
+    setUser(sesion);
     if (authToken) {
       setToken(authToken);
       localStorage.setItem('auth_token', authToken);
     }
-    localStorage.setItem('auth_user', JSON.stringify(userData));
+    localStorage.setItem('auth_user', JSON.stringify(sesion));
   };
 
   const logout = () => {

@@ -1,12 +1,24 @@
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { Capacitor } from '@capacitor/core';
+import bcrypt from 'bcryptjs';
 
+/** Usuario de la sesión. Nunca incluye la contraseña: solo se guarda su hash en SQLite */
 export interface User {
   id?: number;
   nombre: string;
   usuario: string;
+  /** Solo se usa como entrada al crear o cambiar credenciales; nunca se devuelve ni se guarda en claro */
   password?: string;
   rol: 'admin' | 'encuestador';
+}
+
+/** Hash bcrypt (mismo formato que genera el backend) */
+const ES_HASH_BCRYPT = /^\$2[aby]\$\d{2}\$/;
+const COSTO_HASH = 10;
+
+function sinPassword<T extends { password?: string }>(fila: T): Omit<T, 'password'> {
+  const { password: _password, ...resto } = fila;
+  return resto;
 }
 
 export interface Survey {
@@ -22,6 +34,11 @@ export interface Survey {
   telefono_3?: string;
   direccion: string;
   fecha_registro: string;
+  hora_registro?: string;
+  creado_en?: string;
+  /** Última modificación de los datos. El servidor la usa para resolver conflictos (gana la más reciente) */
+  actualizado_en?: string;
+  sincronizado_en?: string;
   profesion?: string;
   estado_sincronizacion: 'pendiente' | 'sincronizado';
 }
@@ -71,11 +88,11 @@ class DatabaseService {
       `;
       await this.db.execute(schemaUsuarios);
 
-      const usersCount = await this.db.query('SELECT COUNT(*) as count FROM usuarios');
-      if (usersCount.values && usersCount.values[0].count === 0) {
-        // Solo insertamos el admin por defecto
-        await this.db.run("INSERT INTO usuarios (nombre, usuario, password, rol) VALUES ('Administrador General', 'admin', '123456', 'admin')");
-      }
+      // Ya no se crea ningún administrador local con contraseña por defecto: el primer inicio de sesión debe ser en línea.
+
+      // Migración de seguridad: las contraseñas guardadas en texto plano (versiones anteriores) se invalidan.
+      // Cada usuario vuelve a iniciar sesión en línea una vez y su contraseña queda guardada como hash.
+      await this.db.run(`UPDATE usuarios SET password = '' WHERE password NOT LIKE '$2%';`);
 
       const schema = `
         CREATE TABLE IF NOT EXISTS encuestas (
@@ -102,6 +119,21 @@ class DatabaseService {
       } catch {
         // Columna ya existe en tablas creadas previamente
       }
+      try {
+        await this.db.execute('ALTER TABLE encuestas ADD COLUMN hora_registro TEXT;');
+      } catch {
+        // Columna ya existe
+      }
+      try {
+        await this.db.execute('ALTER TABLE encuestas ADD COLUMN creado_en TEXT;');
+      } catch {
+        // Columna ya existe
+      }
+      try {
+        await this.db.execute('ALTER TABLE encuestas ADD COLUMN actualizado_en TEXT;');
+      } catch {
+        // Columna ya existe
+      }
 
       if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
       this.isInitialized = true;
@@ -112,31 +144,72 @@ class DatabaseService {
   }
 
   // --- Usuarios ---
-  async getUserByCredentials(usuario: string, password?: string): Promise<User | undefined> {
-    const query = password 
-      ? `SELECT * FROM usuarios WHERE usuario = ? AND password = ? LIMIT 1;`
-      : `SELECT * FROM usuarios WHERE usuario = ? LIMIT 1;`;
-    const params = password ? [usuario, password] : [usuario];
-    const result = await this.db.query(query, params);
+
+  /** Fila completa con el hash de la contraseña. Solo para uso interno de este servicio */
+  private async getUsuarioFila(usuario: string): Promise<(User & { id: number; password: string }) | undefined> {
+    const result = await this.db.query(`SELECT * FROM usuarios WHERE usuario = ? LIMIT 1;`, [usuario]);
     const values = result.values;
-    return values && values.length > 0 ? (values[0] as User) : undefined;
+    return values && values.length > 0 ? (values[0] as User & { id: number; password: string }) : undefined;
+  }
+
+  /** Usuario sin contraseña (para comprobar si existe o mostrar datos) */
+  async getUserByCredentials(usuario: string): Promise<User | undefined> {
+    const fila = await this.getUsuarioFila(usuario);
+    return fila ? sinPassword(fila) : undefined;
+  }
+
+  /**
+   * Inicio de sesión sin conexión. Solo acepta usuarios con contraseña guardada como hash.
+   * Un usuario sin hash (creado sin contraseña o migrado) debe iniciar sesión en línea primero.
+   */
+  async verifyLocalCredentials(usuario: string, password: string): Promise<User | undefined> {
+    const fila = await this.getUsuarioFila(usuario);
+    if (!fila || !ES_HASH_BCRYPT.test(fila.password ?? '')) return undefined;
+    const coincide = await bcrypt.compare(password, fila.password);
+    return coincide ? sinPassword(fila) : undefined;
+  }
+
+  /**
+   * Guarda o actualiza el usuario local después de un inicio de sesión exitoso en línea.
+   * La contraseña se guarda como hash, así el acceso sin conexión queda habilitado.
+   */
+  async guardarUsuarioTrasLoginEnLinea(user: { nombre: string; usuario: string; rol: string }, password: string): Promise<User> {
+    const hash = await bcrypt.hash(password, COSTO_HASH);
+    const existente = await this.getUsuarioFila(user.usuario);
+    if (existente) {
+      await this.db.run(`UPDATE usuarios SET nombre = ?, password = ?, rol = ? WHERE id = ?`, [user.nombre, hash, user.rol, existente.id]);
+    } else {
+      await this.db.run(`INSERT INTO usuarios (nombre, usuario, password, rol) VALUES (?, ?, ?, ?)`, [user.nombre, user.usuario, hash, user.rol]);
+    }
+    if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
+    return (await this.getUserByCredentials(user.usuario)) as User;
   }
 
   async getAllEncuestadores(): Promise<User[]> {
     const query = `SELECT * FROM usuarios WHERE rol = 'encuestador' ORDER BY nombre ASC;`;
     const result = await this.db.query(query);
-    return result.values as User[] || [];
+    return (result.values as User[] || []).map((u) => sinPassword(u));
   }
 
+  /**
+   * Crea un usuario local. Sin contraseña, el usuario queda sin acceso sin conexión
+   * (password = '') hasta que inicie sesión en línea.
+   */
   async addUsuario(user: User): Promise<void> {
+    const hash = user.password ? await bcrypt.hash(user.password, COSTO_HASH) : '';
     const query = `INSERT INTO usuarios (nombre, usuario, password, rol) VALUES (?, ?, ?, ?)`;
-    await this.db.run(query, [user.nombre, user.usuario, user.password || '123456', user.rol]);
+    await this.db.run(query, [user.nombre, user.usuario, hash, user.rol]);
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
   }
-  
+
+  /** Si no se indica contraseña, se conserva la actual (antes se reseteaba a '123456') */
   async updateUsuario(id: number, user: User): Promise<void> {
-    const query = `UPDATE usuarios SET nombre = ?, usuario = ?, password = ? WHERE id = ?`;
-    await this.db.run(query, [user.nombre, user.usuario, user.password || '123456', id]);
+    if (user.password) {
+      const hash = await bcrypt.hash(user.password, COSTO_HASH);
+      await this.db.run(`UPDATE usuarios SET nombre = ?, usuario = ?, password = ? WHERE id = ?`, [user.nombre, user.usuario, hash, id]);
+    } else {
+      await this.db.run(`UPDATE usuarios SET nombre = ?, usuario = ? WHERE id = ?`, [user.nombre, user.usuario, id]);
+    }
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
   }
 
@@ -159,22 +232,26 @@ class DatabaseService {
     return values && values.length > 0 ? (values[0] as Survey) : undefined;
   }
 
-  async addSurvey(survey: Survey): Promise<void> {
+  /**
+   * Guarda una encuesta nueva, o actualiza la existente con el mismo documento.
+   * `desdeServidor`: la copia viene del servidor y conserva su fecha de modificación.
+   * En cualquier otro caso es una edición local y queda marcada como la más reciente.
+   */
+  async addSurvey(survey: Survey, opciones: { desdeServidor?: boolean } = {}): Promise<void> {
+    const actualizadoEn = opciones.desdeServidor && survey.actualizado_en ? survey.actualizado_en : new Date().toISOString();
+
     // Si el documento ya existe en SQLite local, actualizamos la encuesta existente para evitar duplicados
     const existing = await this.getSurveyByDocumento(survey.documento_identidad);
     if (existing && existing.id) {
-      await this.updateSurvey(existing.id, {
-        ...survey,
-        id: existing.id
-      });
+      await this.escribirEncuesta(existing.id, { ...survey, id: existing.id }, actualizadoEn);
       return;
     }
 
     const query = `
       INSERT INTO encuestas (
         encuestador_id, encuestador_usuario, tipo_documento, documento_identidad, nombres, apellidos, telefono_1, telefono_2, telefono_3,
-        direccion, fecha_registro, profesion, estado_sincronizacion
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        direccion, fecha_registro, profesion, estado_sincronizacion, hora_registro, creado_en, actualizado_en
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `;
     const values = [
       survey.encuestador_id || null,
@@ -189,17 +266,25 @@ class DatabaseService {
       survey.direccion,
       survey.fecha_registro,
       survey.profesion || '',
-      survey.estado_sincronizacion
+      survey.estado_sincronizacion,
+      survey.hora_registro || '',
+      survey.creado_en || '',
+      actualizadoEn
     ];
     await this.db.run(query, values);
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
   }
 
+  /** Edición local: la encuesta queda con la fecha de modificación actual */
   async updateSurvey(id: number, survey: Survey): Promise<void> {
+    await this.escribirEncuesta(id, survey, new Date().toISOString());
+  }
+
+  private async escribirEncuesta(id: number, survey: Survey, actualizadoEn: string): Promise<void> {
     const query = `
       UPDATE encuestas SET
         encuestador_id = ?, encuestador_usuario = ?, tipo_documento = ?, documento_identidad = ?, nombres = ?, apellidos = ?, telefono_1 = ?, telefono_2 = ?, telefono_3 = ?,
-        direccion = ?, fecha_registro = ?, profesion = ?, estado_sincronizacion = ?
+        direccion = ?, fecha_registro = ?, profesion = ?, estado_sincronizacion = ?, hora_registro = ?, creado_en = ?, actualizado_en = ?
       WHERE id = ?;
     `;
     const values = [
@@ -216,6 +301,9 @@ class DatabaseService {
       survey.fecha_registro,
       survey.profesion || '',
       survey.estado_sincronizacion,
+      survey.hora_registro || '',
+      survey.creado_en || '',
+      actualizadoEn,
       id
     ];
     await this.db.run(query, values);
@@ -226,8 +314,8 @@ class DatabaseService {
    * Devuelve solo los campos mínimos necesarios para la detección de similitud.
    * Más eficiente que getAllSurveys() cuando solo se necesita comparar documentos/nombres.
    */
-  async getAllSurveysLight(): Promise<{ id: number; documento_identidad: string; nombres: string; apellidos: string; tipo_documento: string }[]> {
-    const query = `SELECT id, documento_identidad, nombres, apellidos, tipo_documento FROM encuestas ORDER BY id DESC;`;
+  async getAllSurveysLight(): Promise<{ id: number; documento_identidad: string; nombres: string; apellidos: string; tipo_documento: string; encuestador_usuario?: string }[]> {
+    const query = `SELECT id, documento_identidad, nombres, apellidos, tipo_documento, encuestador_usuario FROM encuestas ORDER BY id DESC;`;
     const result = await this.db.query(query);
     return result.values as any[] || [];
   }
@@ -306,6 +394,67 @@ class DatabaseService {
     const query = `DELETE FROM encuestas WHERE id = ?;`;
     await this.db.run(query, [id]);
     if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
+  }
+
+  async deleteSurveyByDocumento(documento_identidad: string): Promise<void> {
+    const query = `DELETE FROM encuestas WHERE documento_identidad = ?;`;
+    await this.db.run(query, [documento_identidad]);
+    if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
+  }
+
+  /**
+   * Purga del SQLite local todas las encuestas que estaban marcadas como 'sincronizado'
+   * pero que ya no existen en la lista de documentos activos devuelta por el servidor central.
+   */
+  async purgeDeletedSurveys(activeDocs: string[]): Promise<number> {
+    const activeSet = new Set(activeDocs.map((d) => String(d).trim()));
+    const all = await this.getAllSurveys();
+    let purged = 0;
+    for (const s of all) {
+      if (s.estado_sincronizacion === 'sincronizado' && !activeSet.has(String(s.documento_identidad).trim())) {
+        if (s.documento_identidad) await this.deleteSurveyByDocumento(s.documento_identidad);
+        if (s.id) await this.deleteSurvey(s.id);
+        purged++;
+      }
+    }
+    return purged;
+  }
+
+  /**
+   * Un encuestador solo conserva localmente sus propias encuestas. Borra las copias sincronizadas
+   * de otros encuestadores (o sin autor, de versiones anteriores). Nunca borra encuestas pendientes.
+   * Los datos propios siguen en el servidor y se consultan con "mis encuestas".
+   */
+  async deleteSyncedNotOwned(usuario: string): Promise<number> {
+    const condicion = `estado_sincronizacion = 'sincronizado' AND (encuestador_usuario IS NULL OR encuestador_usuario = '' OR encuestador_usuario != ?)`;
+    const conteo = await this.db.query(`SELECT COUNT(*) AS n FROM encuestas WHERE ${condicion};`, [usuario]);
+    const n = Number(conteo.values?.[0]?.n ?? 0);
+    if (n > 0) {
+      await this.db.run(`DELETE FROM encuestas WHERE ${condicion};`, [usuario]);
+      if (Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
+    }
+    return n;
+  }
+
+  /** Cédulas que este dispositivo tiene ya sincronizadas (las únicas candidatas a reconciliación) */
+  async getSyncedDocumentos(): Promise<string[]> {
+    const result = await this.db.query(`SELECT documento_identidad FROM encuestas WHERE estado_sincronizacion = 'sincronizado';`);
+    return (result.values ?? []).map((r: any) => String(r.documento_identidad).trim()).filter(Boolean);
+  }
+
+  /**
+   * Borra localmente las encuestas sincronizadas que el servidor confirmó como eliminadas.
+   * Nunca borra encuestas pendientes de sincronizar.
+   */
+  async deleteSyncedByDocumentos(documentos: string[]): Promise<number> {
+    for (const documento of documentos) {
+      await this.db.run(
+        `DELETE FROM encuestas WHERE estado_sincronizacion = 'sincronizado' AND documento_identidad = ?;`,
+        [documento]
+      );
+    }
+    if (documentos.length > 0 && Capacitor.getPlatform() === 'web') await this.sqlite.saveToStore('encuestas_db');
+    return documentos.length;
   }
 }
 

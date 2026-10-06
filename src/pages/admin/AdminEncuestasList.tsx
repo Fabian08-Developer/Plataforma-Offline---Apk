@@ -6,6 +6,17 @@ import { useToast } from '../../context/ToastContext';
 import { BACKEND_URL } from '../../config';
 import { exportSurveysToExcel } from '../../services/exportExcel';
 import {
+  type FilterState,
+  type DatePreset,
+  INITIAL_FILTER_STATE,
+  matchesFilters,
+  getTodayRange,
+  getYesterdayRange,
+  getThisWeekRange,
+  getThisMonthRange,
+  getSurveyTime,
+} from '../../services/filterUtils';
+import {
   ArrowLeft,
   Plus,
   Search,
@@ -21,6 +32,16 @@ import {
   Wifi,
   WifiOff,
   User as UserIcon,
+  AlertTriangle,
+  Clock,
+  Filter,
+  X,
+  RotateCcw,
+  Sunrise,
+  Sun,
+  Moon,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import ConfirmModal from '../../components/ConfirmModal';
 
@@ -41,9 +62,9 @@ export default function AdminEncuestasList() {
   const [encuestadores, setEncuestadores] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filtros
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedEncuestador, setSelectedEncuestador] = useState<string>('all');
+  // Filtros avanzados
+  const [filters, setFilters] = useState<FilterState>(INITIAL_FILTER_STATE);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // Modal para eliminar
   const [surveyToDelete, setSurveyToDelete] = useState<SurveyWithEncuestador | null>(null);
@@ -73,7 +94,11 @@ export default function AdminEncuestasList() {
           });
           if (resEncuestas.ok) {
             const data = await resEncuestas.json();
-            setSurveys(data.encuestas || []);
+            const serverSurveys = data.encuestas || [];
+            setSurveys(serverSurveys);
+            // Purgar de SQLite local cualquier encuesta que haya sido eliminada en el servidor
+            const activeDocs = serverSurveys.map((s: any) => s.documento_identidad);
+            await dbService.purgeDeletedSurveys(activeDocs);
           }
 
           // Cargar lista de encuestadores para el filtro
@@ -101,51 +126,79 @@ export default function AdminEncuestasList() {
     setLoading(false);
   };
 
-
   useEffect(() => {
     loadData();
   }, [token]);
 
+  // Manejo de presets rápidos de fecha
+  const handlePresetChange = (preset: DatePreset) => {
+    if (preset === 'all') {
+      setFilters((prev) => ({ ...prev, preset: 'all', fechaDesde: '', fechaHasta: '' }));
+      return;
+    }
+    if (preset === 'today') {
+      const { desde, hasta } = getTodayRange();
+      setFilters((prev) => ({ ...prev, preset: 'today', fechaDesde: desde, fechaHasta: hasta }));
+      return;
+    }
+    if (preset === 'yesterday') {
+      const { desde, hasta } = getYesterdayRange();
+      setFilters((prev) => ({ ...prev, preset: 'yesterday', fechaDesde: desde, fechaHasta: hasta }));
+      return;
+    }
+    if (preset === 'this_week') {
+      const { desde, hasta } = getThisWeekRange();
+      setFilters((prev) => ({ ...prev, preset: 'this_week', fechaDesde: desde, fechaHasta: hasta }));
+      return;
+    }
+    if (preset === 'this_month') {
+      const { desde, hasta } = getThisMonthRange();
+      setFilters((prev) => ({ ...prev, preset: 'this_month', fechaDesde: desde, fechaHasta: hasta }));
+      return;
+    }
+    if (preset === 'custom') {
+      setFilters((prev) => ({ ...prev, preset: 'custom' }));
+      setShowAdvancedFilters(true);
+      return;
+    }
+  };
+
+  // Accesos directos de turnos / horas
+  const handleSetShift = (shift: 'manana' | 'tarde' | 'noche' | 'clear') => {
+    if (shift === 'manana') {
+      setFilters((prev) => ({ ...prev, horaDesde: '06:00', horaHasta: '12:00' }));
+    } else if (shift === 'tarde') {
+      setFilters((prev) => ({ ...prev, horaDesde: '12:00', horaHasta: '18:00' }));
+    } else if (shift === 'noche') {
+      setFilters((prev) => ({ ...prev, horaDesde: '18:00', horaHasta: '23:59' }));
+    } else {
+      setFilters((prev) => ({ ...prev, horaDesde: '', horaHasta: '' }));
+    }
+  };
+
+  // Restablecer todos los filtros
+  const handleResetFilters = () => {
+    setFilters(INITIAL_FILTER_STATE);
+  };
+
   // Filtrado reactivo en tiempo real
   const filteredSurveys = useMemo(() => {
-    return surveys.filter((s) => {
-      // Filtro por encuestador
-      if (selectedEncuestador !== 'all') {
-        const encId = s.encuestador_id ? String(s.encuestador_id) : '';
-        const encUser = s.encuestador_usuario || s.encuestador?.usuario || '';
-        if (encId !== selectedEncuestador && encUser !== selectedEncuestador) {
-          return false;
-        }
-      }
+    return surveys.filter((s) => matchesFilters(s, filters));
+  }, [surveys, filters]);
 
-      // Filtro por texto de búsqueda
-      if (!searchTerm.trim()) return true;
-      const term = searchTerm.toLowerCase();
-      const doc = (s.documento_identidad || '').toLowerCase();
-      const nombres = (s.nombres || '').toLowerCase();
-      const apellidos = (s.apellidos || '').toLowerCase();
-      const fullName = `${nombres} ${apellidos}`;
-      const tel1 = (s.telefono_1 || '').toLowerCase();
-      const tel2 = (s.telefono_2 || '').toLowerCase();
-      const tel3 = (s.telefono_3 || '').toLowerCase();
-      const dir = (s.direccion || '').toLowerCase();
-      const prof = (s.profesion || '').toLowerCase();
-      const encName = (s.encuestador?.nombre || '').toLowerCase();
+  // Conteo de filtros activos
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (filters.preset !== 'all') count++;
+    if (filters.preset === 'custom' && (filters.fechaDesde || filters.fechaHasta)) count++;
+    if (filters.horaDesde || filters.horaHasta) count++;
+    if (filters.encuestador !== 'all') count++;
+    if (filters.estadoSync !== 'all') count++;
+    if (filters.searchTerm.trim()) count++;
+    return count;
+  }, [filters]);
 
-      return (
-        doc.includes(term) ||
-        fullName.includes(term) ||
-        tel1.includes(term) ||
-        tel2.includes(term) ||
-        tel3.includes(term) ||
-        dir.includes(term) ||
-        prof.includes(term) ||
-        encName.includes(term)
-      );
-    });
-  }, [surveys, searchTerm, selectedEncuestador]);
-
-  // Exportar a Excel (XLSX con diseño profesional)
+  // Exportar a Excel (XLSX con diseño profesional respetando filtros activos)
   const handleExportXLSX = async () => {
     if (filteredSurveys.length === 0) {
       toast.warning('No hay encuestas para exportar con los filtros actuales.');
@@ -165,15 +218,18 @@ export default function AdminEncuestasList() {
         direccion:             s.direccion ?? '',
         profesion:             s.profesion ?? '',
         fecha_registro:        s.fecha_registro ?? '',
+        hora_registro:         getSurveyTime(s) || '',
         encuestadorNombre:     s.encuestador?.nombre ?? s.encuestador_usuario ?? 'Desconocido',
         estado_sincronizacion: s.estado_sincronizacion ?? 'sincronizado',
       }));
 
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filterLabel = filters.preset !== 'all' ? `_${filters.preset}` : '';
       await exportSurveysToExcel(
         data,
-        `encuestas_export_${new Date().toISOString().split('T')[0]}.xlsx`
+        `encuestas_export${filterLabel}_${dateStr}.xlsx`
       );
-      toast.success('Archivo Excel descargado correctamente.');
+      toast.success('Archivo Excel descargado con los filtros actuales.');
     } catch (err) {
       console.error('Error al exportar Excel:', err);
       toast.error('No se pudo generar el archivo Excel. Inténtalo de nuevo.');
@@ -194,7 +250,13 @@ export default function AdminEncuestasList() {
         }).catch(console.warn);
       }
 
-      await dbService.deleteSurvey(surveyToDelete.id);
+      if (surveyToDelete.documento_identidad) {
+        await dbService.deleteSurveyByDocumento(surveyToDelete.documento_identidad);
+      }
+      if (surveyToDelete.id) {
+        await dbService.deleteSurvey(surveyToDelete.id);
+      }
+      window.dispatchEvent(new Event('surveys-updated'));
       setSurveyToDelete(null);
       toast.success('Encuesta eliminada correctamente.');
       loadData();
@@ -230,6 +292,14 @@ export default function AdminEncuestasList() {
 
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <button
+            onClick={() => navigate('/admin/duplicados')}
+            className="btn btn-outline"
+            style={{ borderColor: 'rgba(245, 158, 11, 0.4)', color: '#d97706' }}
+            title="Revisar posibles encuestas duplicadas o en conflicto"
+          >
+            <AlertTriangle size={18} /> <span>Revisar Duplicados</span>
+          </button>
+          <button
             onClick={handleExportXLSX}
             className="btn btn-outline"
             title="Descargar datos en Excel (.xlsx)"
@@ -242,7 +312,7 @@ export default function AdminEncuestasList() {
         </div>
       </header>
 
-      {/* Barra de Filtros y Búsqueda */}
+      {/* Barra de Filtros y Búsqueda Avanzada */}
       <div
         className="glass-container"
         style={{
@@ -253,11 +323,12 @@ export default function AdminEncuestasList() {
           gap: '1rem',
         }}
       >
+        {/* Fila 1: Búsqueda, Encuestador y Estado Sync */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-            gap: '1rem',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: '0.75rem',
             alignItems: 'center',
           }}
         >
@@ -269,12 +340,31 @@ export default function AdminEncuestasList() {
             />
             <input
               type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={filters.searchTerm}
+              onChange={(e) => setFilters((prev) => ({ ...prev, searchTerm: e.target.value }))}
               placeholder="Buscar por cédula, nombre, teléfono, dirección..."
               className="form-input"
-              style={{ paddingLeft: '2.75rem' }}
+              style={{ paddingLeft: '2.75rem', paddingRight: filters.searchTerm ? '2.5rem' : '1rem' }}
             />
+            {filters.searchTerm && (
+              <button
+                onClick={() => setFilters((prev) => ({ ...prev, searchTerm: '' }))}
+                style={{
+                  position: 'absolute',
+                  right: '0.75rem',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+                title="Borrar búsqueda"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
 
           {/* Filtro por Encuestador */}
@@ -284,8 +374,8 @@ export default function AdminEncuestasList() {
               style={{ position: 'absolute', left: '1rem', color: 'var(--text-muted)' }}
             />
             <select
-              value={selectedEncuestador}
-              onChange={(e) => setSelectedEncuestador(e.target.value)}
+              value={filters.encuestador}
+              onChange={(e) => setFilters((prev) => ({ ...prev, encuestador: e.target.value }))}
               className="form-input"
               style={{ paddingLeft: '2.75rem' }}
             >
@@ -297,7 +387,414 @@ export default function AdminEncuestasList() {
               ))}
             </select>
           </div>
+
+          {/* Filtro por Estado de Sincronización */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Filter
+              size={18}
+              style={{ position: 'absolute', left: '1rem', color: 'var(--text-muted)' }}
+            />
+            <select
+              value={filters.estadoSync}
+              onChange={(e) => setFilters((prev) => ({ ...prev, estadoSync: e.target.value as any }))}
+              className="form-input"
+              style={{ paddingLeft: '2.75rem' }}
+            >
+              <option value="all">Todos los estados</option>
+              <option value="sincronizado">Solo Sincronizados</option>
+              <option value="pendiente">Solo Pendientes</option>
+            </select>
+          </div>
         </div>
+
+        {/* Fila 2: Presets de Fecha y botón de Franja Horaria */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '0.5rem',
+            paddingTop: '0.25rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginRight: '0.25rem' }}>
+              Fecha:
+            </span>
+            <button
+              type="button"
+              onClick={() => handlePresetChange('all')}
+              className={`btn btn-sm ${filters.preset === 'all' && !filters.fechaDesde ? 'btn-primary' : 'btn-outline'}`}
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderRadius: '20px' }}
+            >
+              Todas
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePresetChange('today')}
+              className={`btn btn-sm ${filters.preset === 'today' ? 'btn-primary' : 'btn-outline'}`}
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderRadius: '20px' }}
+            >
+              Hoy
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePresetChange('yesterday')}
+              className={`btn btn-sm ${filters.preset === 'yesterday' ? 'btn-primary' : 'btn-outline'}`}
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderRadius: '20px' }}
+            >
+              Ayer
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePresetChange('this_week')}
+              className={`btn btn-sm ${filters.preset === 'this_week' ? 'btn-primary' : 'btn-outline'}`}
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderRadius: '20px' }}
+            >
+              Esta Semana
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePresetChange('this_month')}
+              className={`btn btn-sm ${filters.preset === 'this_month' ? 'btn-primary' : 'btn-outline'}`}
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderRadius: '20px' }}
+            >
+              Este Mes
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePresetChange('custom')}
+              className={`btn btn-sm ${filters.preset === 'custom' ? 'btn-primary' : 'btn-outline'}`}
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderRadius: '20px' }}
+            >
+              <Calendar size={14} /> Personalizado
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className={`btn btn-sm btn-outline`}
+            style={{
+              padding: '0.35rem 0.75rem',
+              fontSize: '0.8rem',
+              borderRadius: '20px',
+              borderColor: (filters.horaDesde || filters.horaHasta) ? 'var(--primary)' : undefined,
+              color: (filters.horaDesde || filters.horaHasta) ? 'var(--primary)' : undefined,
+              fontWeight: (filters.horaDesde || filters.horaHasta) ? 600 : 500,
+            }}
+          >
+            <Clock size={14} />
+            <span>Franja Horaria {(filters.horaDesde || filters.horaHasta) ? `(${filters.horaDesde || '00:00'} - ${filters.horaHasta || '23:59'})` : ''}</span>
+            {showAdvancedFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </div>
+
+        {/* Panel Expandible de Fechas y Horas */}
+        {showAdvancedFilters && (
+          <div
+            style={{
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid rgba(226, 232, 240, 0.2)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '1rem',
+              }}
+            >
+              {/* Rango de Fechas */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                  Rango de Fechas (Desde - Hasta)
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type="date"
+                    value={filters.fechaDesde}
+                    onChange={(e) =>
+                      setFilters((prev) => ({ ...prev, preset: 'custom', fechaDesde: e.target.value }))
+                    }
+                    className="form-input"
+                    style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                  />
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>a</span>
+                  <input
+                    type="date"
+                    value={filters.fechaHasta}
+                    onChange={(e) =>
+                      setFilters((prev) => ({ ...prev, preset: 'custom', fechaHasta: e.target.value }))
+                    }
+                    className="form-input"
+                    style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                  />
+                </div>
+              </div>
+
+              {/* Rango de Horas ("De una hora a otra") */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                  Franja Horaria ("De una hora a otra")
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type="time"
+                    value={filters.horaDesde}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, horaDesde: e.target.value }))}
+                    className="form-input"
+                    style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                  />
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>a</span>
+                  <input
+                    type="time"
+                    value={filters.horaHasta}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, horaHasta: e.target.value }))}
+                    className="form-input"
+                    style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                  />
+                  {(filters.horaDesde || filters.horaHasta) && (
+                    <button
+                      type="button"
+                      onClick={() => handleSetShift('clear')}
+                      className="btn btn-outline btn-sm"
+                      style={{ padding: '0.35rem 0.5rem', fontSize: '0.75rem' }}
+                      title="Quitar filtro de horas"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Accesos rápidos de turnos */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Turnos rápidos:</span>
+              <button
+                type="button"
+                onClick={() => handleSetShift('manana')}
+                className="btn btn-outline btn-sm"
+                style={{
+                  padding: '0.25rem 0.6rem',
+                  fontSize: '0.75rem',
+                  borderRadius: '16px',
+                  background: filters.horaDesde === '06:00' && filters.horaHasta === '12:00' ? 'rgba(var(--primary-rgb, 99,102,241), 0.15)' : undefined,
+                  borderColor: filters.horaDesde === '06:00' && filters.horaHasta === '12:00' ? 'var(--primary)' : undefined,
+                }}
+              >
+                <Sunrise size={13} color="#f59e0b" /> Mañana (06:00 - 12:00)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetShift('tarde')}
+                className="btn btn-outline btn-sm"
+                style={{
+                  padding: '0.25rem 0.6rem',
+                  fontSize: '0.75rem',
+                  borderRadius: '16px',
+                  background: filters.horaDesde === '12:00' && filters.horaHasta === '18:00' ? 'rgba(var(--primary-rgb, 99,102,241), 0.15)' : undefined,
+                  borderColor: filters.horaDesde === '12:00' && filters.horaHasta === '18:00' ? 'var(--primary)' : undefined,
+                }}
+              >
+                <Sun size={13} color="#3b82f6" /> Tarde (12:00 - 18:00)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetShift('noche')}
+                className="btn btn-outline btn-sm"
+                style={{
+                  padding: '0.25rem 0.6rem',
+                  fontSize: '0.75rem',
+                  borderRadius: '16px',
+                  background: filters.horaDesde === '18:00' && filters.horaHasta === '23:59' ? 'rgba(var(--primary-rgb, 99,102,241), 0.15)' : undefined,
+                  borderColor: filters.horaDesde === '18:00' && filters.horaHasta === '23:59' ? 'var(--primary)' : undefined,
+                }}
+              >
+                <Moon size={13} color="#8b5cf6" /> Noche (18:00 - 23:59)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Fila 3: Chips de Filtros Activos */}
+        {activeFiltersCount > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              flexWrap: 'wrap',
+              paddingTop: '0.25rem',
+            }}
+          >
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              Filtros activos:
+            </span>
+
+            {/* Chip de Fecha / Preset */}
+            {filters.preset !== 'all' && (
+              <span
+                className="badge"
+                style={{
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  color: 'var(--primary)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.75rem',
+                }}
+              >
+                <Calendar size={12} />
+                {filters.preset === 'today' && 'Hoy'}
+                {filters.preset === 'yesterday' && 'Ayer'}
+                {filters.preset === 'this_week' && 'Esta semana'}
+                {filters.preset === 'this_month' && 'Este mes'}
+                {filters.preset === 'custom' && `${filters.fechaDesde || '...'} a ${filters.fechaHasta || '...'}`}
+                <button
+                  type="button"
+                  onClick={() => setFilters((prev) => ({ ...prev, preset: 'all', fechaDesde: '', fechaHasta: '' }))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0 }}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            {/* Chip de Horas */}
+            {(filters.horaDesde || filters.horaHasta) && (
+              <span
+                className="badge"
+                style={{
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: '#10b981',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.75rem',
+                }}
+              >
+                <Clock size={12} />
+                {filters.horaDesde || '00:00'} - {filters.horaHasta || '23:59'}
+                <button
+                  type="button"
+                  onClick={() => setFilters((prev) => ({ ...prev, horaDesde: '', horaHasta: '' }))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0 }}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            {/* Chip de Encuestador */}
+            {filters.encuestador !== 'all' && (
+              <span
+                className="badge"
+                style={{
+                  background: 'rgba(245, 158, 11, 0.15)',
+                  color: '#f59e0b',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.75rem',
+                }}
+              >
+                <Users size={12} />
+                {encuestadores.find((u) => String(u.id) === filters.encuestador)?.nombre || 'Encuestador'}
+                <button
+                  type="button"
+                  onClick={() => setFilters((prev) => ({ ...prev, encuestador: 'all' }))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0 }}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            {/* Chip de Estado Sync */}
+            {filters.estadoSync !== 'all' && (
+              <span
+                className="badge"
+                style={{
+                  background: filters.estadoSync === 'sincronizado' ? 'rgba(39, 174, 96, 0.15)' : 'rgba(230, 126, 34, 0.15)',
+                  color: filters.estadoSync === 'sincronizado' ? '#27ae60' : '#e67e22',
+                  border: '1px solid currentColor',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.75rem',
+                }}
+              >
+                {filters.estadoSync === 'sincronizado' ? <Wifi size={12} /> : <WifiOff size={12} />}
+                {filters.estadoSync === 'sincronizado' ? 'Sincronizados' : 'Pendientes'}
+                <button
+                  type="button"
+                  onClick={() => setFilters((prev) => ({ ...prev, estadoSync: 'all' }))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0 }}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            {/* Chip de Búsqueda */}
+            {filters.searchTerm.trim() && (
+              <span
+                className="badge"
+                style={{
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  color: '#3b82f6',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.75rem',
+                }}
+              >
+                <Search size={12} /> "{filters.searchTerm}"
+                <button
+                  type="button"
+                  onClick={() => setFilters((prev) => ({ ...prev, searchTerm: '' }))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0 }}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--primary)',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                textDecoration: 'underline',
+                marginLeft: '0.25rem',
+              }}
+            >
+              Limpiar todo
+            </button>
+          </div>
+        )}
 
         {/* Resumen de conteo */}
         <div
@@ -307,30 +804,25 @@ export default function AdminEncuestasList() {
             justifyContent: 'space-between',
             fontSize: '0.875rem',
             color: 'var(--text-muted)',
-            borderTop: '1px solid rgba(226, 232, 240, 0.4)',
+            borderTop: '1px solid rgba(226, 232, 240, 0.2)',
             paddingTop: '0.75rem',
           }}
         >
           <span>
-            Mostrando <strong>{filteredSurveys.length}</strong> de{' '}
-            <strong>{surveys.length}</strong> encuestas registradas
+            Mostrando <strong>{filteredSurveys.length}</strong> de <strong>{surveys.length}</strong> encuestas registradas
+            {activeFiltersCount > 0 && (
+              <span style={{ color: 'var(--primary)', fontWeight: 500, marginLeft: '0.5rem' }}>
+                ({activeFiltersCount} {activeFiltersCount === 1 ? 'filtro activo' : 'filtros activos'})
+              </span>
+            )}
           </span>
-          {(searchTerm || selectedEncuestador !== 'all') && (
+          {activeFiltersCount > 0 && (
             <button
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedEncuestador('all');
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--primary)',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-              }}
+              onClick={handleResetFilters}
+              className="btn btn-outline btn-sm"
+              style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
             >
-              Limpiar filtros
+              <RotateCcw size={13} /> Limpiar filtros
             </button>
           )}
         </div>
@@ -349,10 +841,19 @@ export default function AdminEncuestasList() {
           />
           <h3 style={{ margin: 0, fontSize: '1.25rem' }}>No se encontraron encuestas</h3>
           <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-            {searchTerm || selectedEncuestador !== 'all'
-              ? 'Prueba ajustando los términos de búsqueda o filtros.'
+            {activeFiltersCount > 0
+              ? 'Prueba ajustando los términos de búsqueda o filtros activos.'
               : 'Aún no hay encuestas registradas en el sistema.'}
           </p>
+          {activeFiltersCount > 0 && (
+            <button
+              onClick={handleResetFilters}
+              className="btn btn-outline"
+              style={{ marginTop: '1rem' }}
+            >
+              <RotateCcw size={14} /> Restablecer filtros
+            </button>
+          )}
         </div>
       ) : (
         <div className="survey-list">
@@ -482,6 +983,11 @@ export default function AdminEncuestasList() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
                   <Calendar size={15} />
                   <span>{survey.fecha_registro}</span>
+                  {getSurveyTime(survey) && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--primary)', fontWeight: 600, marginLeft: '0.5rem' }}>
+                      <Clock size={13} /> {getSurveyTime(survey)}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

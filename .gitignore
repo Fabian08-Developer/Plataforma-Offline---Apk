@@ -23,3 +23,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Binarios de la app: se generan con Android Studio y se publican desde el panel (no se versionan)
+*.apk

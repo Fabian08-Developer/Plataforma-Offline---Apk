@@ -10,6 +10,11 @@ import 'react-phone-number-input/style.css';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { BACKEND_URL } from '../config';
+import { reconciliarEncuestasEliminadas } from '../services/reconciliation';
+
+/** Mensajes para cédulas de otro encuestador: nunca se muestran nombres ni datos de esa persona */
+const MENSAJE_CEDULA_AJENA = 'Esta cédula ya está registrada por otro encuestador. Consulte al administrador.';
+const MENSAJE_SIMILAR_AJENO = 'Posible duplicado con un registro de otro encuestador. Consulte al administrador.';
 
 
 /**
@@ -50,12 +55,21 @@ export default function SurveyForm() {
     telefono_3: '',
     direccion: '',
     fecha_registro: new Date().toISOString().split('T')[0],
+    hora_registro: new Date().toTimeString().slice(0, 5),
+    creado_en: new Date().toISOString(),
     profesion: '',
     estado_sincronizacion: 'pendiente'
   });
 
   const [newPhoneInput, setNewPhoneInput] = useState('');
   const [existingFound, setExistingFound] = useState(false);
+  const [conflictSurvey, setConflictSurvey] = useState<Survey | null>(null);
+  /** true cuando la cédula pertenece a otro encuestador: no se muestra ningún dato de esa persona */
+  const [conflictoAjeno, setConflictoAjeno] = useState(false);
+  /** Solo se usan datos de encuestas propias (o de todas si es admin). Las copias de otros no se muestran. */
+  const esPropiaLocal = (s: { encuestador_usuario?: string }): boolean =>
+    user?.rol === 'admin' || (!!s.encuestador_usuario && s.encuestador_usuario === user?.usuario);
+  const [originalDoc, setOriginalDoc] = useState<string>('');
   const [phoneError, setPhoneError] = useState('');
   // Estado para advertencias de posibles duplicados
   const [similarityWarnings, setSimilarityWarnings] = useState<SimilarityMatch[]>([]);
@@ -67,7 +81,7 @@ export default function SurveyForm() {
       if (isEditing) {
         // 1. Si es administrador (o tiene token) y hay red, cargar del servidor centralizado
         //    ya que los IDs mostrados en el panel de administración provienen de PostgreSQL.
-        if (user?.rol === 'admin' || token) {
+        if (user?.rol === 'admin') {
           try {
             const authToken = token || localStorage.getItem('auth_token');
             const res = await fetch(`${BACKEND_URL}/api/admin/encuestas/${id}`, {
@@ -78,6 +92,7 @@ export default function SurveyForm() {
               const remoteSurvey = await res.json();
               if (remoteSurvey && remoteSurvey.documento_identidad) {
                 setFormData(remoteSurvey);
+                setOriginalDoc(remoteSurvey.documento_identidad);
                 return;
               }
             }
@@ -90,124 +105,327 @@ export default function SurveyForm() {
         const survey = await dbService.getSurveyById(Number(id));
         if (survey) {
           setFormData(survey);
+          setOriginalDoc(survey.documento_identidad);
         }
       }
     }
     loadSurvey();
+
+    // Reconciliación automática: si hay conexión, purgar encuestas eliminadas del servidor de SQLite local
+    async function reconcileLocal() {
+      if (navigator.onLine) {
+        const authToken = token || localStorage.getItem('auth_token');
+        await reconciliarEncuestasEliminadas(authToken);
+      }
+    }
+    reconcileLocal();
   }, [id, isEditing, user?.rol, token]);
 
   const handleDocumentBlur = async () => {
-    if (!isEditing && formData.documento_identidad && formData.documento_identidad.trim().length >= 5) {
-      try {
-        const doc = formData.documento_identidad.trim();
+    const doc = formData.documento_identidad?.trim() || '';
+    if (doc.length < 5) {
+      if (!isEditing && existingFound) {
+        setFormData({
+          tipo_documento: formData.tipo_documento || 'C.C',
+          documento_identidad: doc,
+          nombres: '',
+          apellidos: '',
+          telefono_1: '',
+          telefono_2: '',
+          telefono_3: '',
+          direccion: '',
+          profesion: '',
+          fecha_registro: new Date().toISOString().split('T')[0],
+          hora_registro: new Date().toTimeString().slice(0, 5),
+          creado_en: new Date().toISOString(),
+          estado_sincronizacion: 'pendiente'
+        });
+        setExistingFound(false);
+        setNewPhoneInput('');
+        setPhoneError('');
+      }
+      setConflictSurvey(null);
+      return;
+    }
 
-        // 1. Buscar primero en SQLite local (funciona offline)
+    try {
+      if (isEditing) {
+        // Si el documento es el mismo que originalmente tenía esta encuesta, no hay conflicto
+        if (originalDoc && doc === originalDoc) {
+          setConflictSurvey(null);
+          await verifySimilarity(doc, formData.nombres, formData.apellidos);
+          return;
+        }
+
+        // El usuario modificó el documento durante la edición.
+        // Verificar si este nuevo documento ya está asignado a OTRA encuesta.
+        // Como la cédula ya cambió respecto a la original, cualquier registro con la nueva cédula es otra encuesta.
+        // Se compara por cédula y no por id (los ids locales y del servidor no coinciden).
+
+        // 1. Buscar en SQLite local (solo copias propias)
         let existing: Survey | undefined = await dbService.getSurveyByDocumento(doc);
+        let ajena = !!existing && !esPropiaLocal(existing);
+        if (ajena) existing = undefined;
 
-        // 2. Si no está localmente Y hay conexión, consultar el servidor.
-        //    Esto detecta encuestas registradas por otros encuestadores o por el admin,
-        //    que no están en el SQLite local de este dispositivo.
-        if (!existing && navigator.onLine) {
+        // 2. Si hay conexión, consultar el servidor central para validar estado real
+        if (navigator.onLine) {
           try {
             const authToken = token || localStorage.getItem('auth_token');
-            const res = await fetch(`${BACKEND_URL}/api/encuestas/verificar-documento/${doc}`, {
+            const res = await fetch(`${BACKEND_URL}/api/encuestas/verificar-documento/${encodeURIComponent(doc)}`, {
               headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-              signal: AbortSignal.timeout(5000)
+              signal: AbortSignal.timeout(5000),
             });
             if (res.ok) {
               const remoteData = await res.json();
-              if (remoteData?.documento_identidad) {
+              if (remoteData?.ajeno) {
+                ajena = true;
+              } else if (remoteData?.documento_identidad) {
                 existing = remoteData as Survey;
-                // Guardar en SQLite local como 'sincronizado' para uso offline futuro
-                await dbService.addSurvey({ ...remoteData, estado_sincronizacion: 'sincronizado' });
+              }
+            } else if (res.status === 404) {
+              // Si el servidor confirma que NO existe (fue eliminada), purgar copia local residual
+              if (existing) {
+                await dbService.deleteSurveyByDocumento(doc);
+                existing = undefined;
               }
             }
           } catch {
-            // Fallo silencioso: si no se puede consultar el servidor, continuar con datos locales
+            // Ignorar fallo de red
           }
         }
 
-        if (existing) {
-          setFormData({
-            ...existing,
-            fecha_registro: new Date().toISOString().split('T')[0]
-          });
-          setNewPhoneInput('');
-          setExistingFound(true);
-          // Si ya existe coincidencia exacta, limpiar advertencias de similitud
+        // Si la cédula pertenece a otro encuestador: solo se informa, sin datos de esa persona
+        if (ajena) {
+          setConflictoAjeno(true);
+          setConflictSurvey({ documento_identidad: doc } as Survey);
+          toast.error(MENSAJE_CEDULA_AJENA);
           setSimilarityWarnings([]);
           setShowSimilarityModal(false);
           return;
         }
 
-        setExistingFound(false);
-
-        // ── DETECCIÓN DE SIMILITUD ────────────────────────────────────────────
-        // Si no hay coincidencia exacta, buscar registros similares para alertar
-        // al encuestador de un posible error de digitación.
-        //
-        // OFFLINE: Siempre se compara contra los datos del SQLite local.
-        // ONLINE:  Además se consulta el servidor para detectar registros de
-        //          otros dispositivos que aún no están en el SQLite local.
-        setCheckingSimilarity(true);
-        try {
-          // Paso A: Obtener datos ligeros del SQLite local (funciona siempre, sin red)
-          const localLight = await dbService.getAllSurveysLight();
-
-          // Paso B: Si hay conexión, ampliar con datos del servidor
-          let remoteLight: typeof localLight = [];
-          if (navigator.onLine) {
-            try {
-              const authToken = token || localStorage.getItem('auth_token');
-              const res = await fetch(
-                `${BACKEND_URL}/api/encuestas/buscar-similares/${encodeURIComponent(doc)}`,
-                {
-                  headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-                  signal: AbortSignal.timeout(5000),
-                }
-              );
-              if (res.ok) {
-                remoteLight = await res.json();
-              }
-            } catch {
-              // Sin conexión real o servidor caído → solo datos locales
-            }
-          }
-
-          // Combinar local + remoto sin duplicar (por documento_identidad)
-          const localDocs = new Set(localLight.map(s => s.documento_identidad));
-          const combined = [
-            ...localLight,
-            ...remoteLight.filter(r => !localDocs.has(r.documento_identidad)),
-          ];
-
-          const matches = checkSimilarity(
-            doc,
-            formData.nombres || '',
-            formData.apellidos || '',
-            combined
-          );
-
-          if (matches.length > 0) {
-            setSimilarityWarnings(matches);
-            setShowSimilarityModal(true);
-          } else {
-            setSimilarityWarnings([]);
-            setShowSimilarityModal(false);
-          }
-        } catch (simErr) {
-          console.warn('Error en verificación de similitud:', simErr);
-        } finally {
-          setCheckingSimilarity(false);
+        // Si ya existe otra encuesta propia con este documento
+        if (existing) {
+          setConflictoAjeno(false);
+          setConflictSurvey(existing);
+          toast.error(`El documento ${doc} ya pertenece a ${existing.nombres} ${existing.apellidos} (ID: #${existing.id || 'existente'}).`);
+          setSimilarityWarnings([]);
+          setShowSimilarityModal(false);
+          return;
         }
 
-      } catch (err) {
-        console.warn('Error al verificar documento existente:', err);
+        setConflictSurvey(null);
+        // Si no hay conflicto exacto, verificar similitudes (Levenshtein) con otros registros
+        await verifySimilarity(doc, formData.nombres, formData.apellidos);
+      } else {
+        // Modo creación de nueva encuesta
+        // 1. Buscar primero en SQLite local (funciona offline). Solo copias propias.
+        let existing: Survey | undefined = await dbService.getSurveyByDocumento(doc);
+        let ajena = !!existing && !esPropiaLocal(existing);
+        if (ajena) existing = undefined;
+
+        // 2. Si hay conexión, consultar el servidor central
+        if (navigator.onLine) {
+          try {
+            const authToken = token || localStorage.getItem('auth_token');
+            const res = await fetch(`${BACKEND_URL}/api/encuestas/verificar-documento/${encodeURIComponent(doc)}`, {
+              headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+              signal: AbortSignal.timeout(5000),
+            });
+            if (res.ok) {
+              const remoteData = await res.json();
+              if (remoteData?.ajeno) {
+                // Registro de otro encuestador: no se guarda ni se autocompleta nada
+                ajena = true;
+              } else if (remoteData?.documento_identidad) {
+                await dbService.addSurvey({ ...remoteData, estado_sincronizacion: 'sincronizado' }, { desdeServidor: true });
+                // El formulario usa el id LOCAL de la copia (no el del servidor) para cualquier escritura posterior
+                const filaLocal = await dbService.getSurveyByDocumento(remoteData.documento_identidad);
+                existing = { ...(remoteData as Survey), id: filaLocal?.id };
+              }
+            } else if (res.status === 404) {
+              // Si el servidor confirma que NO existe (fue eliminada), purgar copia local residual
+              if (existing) {
+                await dbService.deleteSurveyByDocumento(doc);
+                existing = undefined;
+              }
+            }
+          } catch {
+            // Fallo silencioso en modo offline
+          }
+        }
+
+        if (ajena) {
+          setConflictoAjeno(true);
+          setConflictSurvey({ documento_identidad: doc } as Survey);
+          toast.error(MENSAJE_CEDULA_AJENA);
+          setSimilarityWarnings([]);
+          setShowSimilarityModal(false);
+          setExistingFound(false);
+          return;
+        }
+
+        if (existing) {
+          setFormData({
+            ...existing,
+            fecha_registro: new Date().toISOString().split('T')[0],
+          });
+          setNewPhoneInput('');
+          setExistingFound(true);
+          setSimilarityWarnings([]);
+          setShowSimilarityModal(false);
+          return;
+        }
+
+        // Si no se encontró y antes había datos autocompletados, vaciar los campos
+        if (existingFound) {
+          setFormData({
+            tipo_documento: formData.tipo_documento || 'C.C',
+            documento_identidad: doc,
+            nombres: '',
+            apellidos: '',
+            telefono_1: '',
+            telefono_2: '',
+            telefono_3: '',
+            direccion: '',
+            profesion: '',
+            fecha_registro: new Date().toISOString().split('T')[0],
+            hora_registro: new Date().toTimeString().slice(0, 5),
+            creado_en: new Date().toISOString(),
+            estado_sincronizacion: 'pendiente'
+          });
+          setNewPhoneInput('');
+          setPhoneError('');
+        }
+
+        setExistingFound(false);
+        await verifySimilarity(doc, formData.nombres, formData.apellidos);
       }
+    } catch (err) {
+      console.warn('Error al verificar documento existente:', err);
+    }
+  };
+
+  // Sin guardas de estado aquí: quien llama ya decidió. Un guard leería el estado VIEJO del render
+  // (p. ej. existingFound=true tras una cédula anterior) y omitiría la verificación de duplicados.
+  const verifySimilarity = async (doc: string, nombres?: string, apellidos?: string) => {
+    const cleanDoc = doc?.trim() || '';
+    if (cleanDoc.length < 5) return;
+
+    setCheckingSimilarity(true);
+    try {
+      // Reconciliación previa: si hay conexión, verificar qué documentos siguen activos en el servidor
+      // y purgar del almacenamiento local cualquier encuesta que haya sido eliminada en el servidor.
+      if (navigator.onLine) {
+        const authToken = token || localStorage.getItem('auth_token');
+        await reconciliarEncuestasEliminadas(authToken);
+      }
+
+      // Paso A: Obtener datos ligeros del SQLite local (ya purgado y sin fantasmas eliminados)
+      // Solo copias propias: los registros de otros encuestadores no se comparan ni se muestran
+      const todoLocal = await dbService.getAllSurveysLight();
+      const localLight = todoLocal.filter(esPropiaLocal);
+      let avisoAjeno = todoLocal.length !== localLight.length;
+
+      // Paso B: Si hay conexión, consultar el servidor VPS
+      let remoteLight: typeof localLight = [];
+      if (navigator.onLine) {
+        try {
+          const authToken = token || localStorage.getItem('auth_token');
+          const queryParams = new URLSearchParams();
+          if (nombres) queryParams.set('nombres', nombres);
+          if (apellidos) queryParams.set('apellidos', apellidos);
+          const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
+          const res = await fetch(
+            `${BACKEND_URL}/api/encuestas/buscar-similares/${encodeURIComponent(cleanDoc)}${qs}`,
+            {
+              headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+              signal: AbortSignal.timeout(5000),
+            }
+          );
+          if (res.ok) {
+            const datosRemotos: Array<(typeof localLight)[number] & { ajeno?: boolean }> = await res.json();
+            if (datosRemotos.some((r) => r.ajeno)) avisoAjeno = true;
+            remoteLight = datosRemotos.filter((r) => !r.ajeno);
+          }
+        } catch {
+          // Sin conexión real o servidor caído → continuar con SQLite local
+        }
+      }
+
+      // Combinar local + remoto sin duplicar por documento
+      const localDocs = new Set(localLight.map(s => s.documento_identidad));
+      let combined = [
+        ...localLight,
+        ...remoteLight.filter(r => !localDocs.has(r.documento_identidad)),
+      ];
+
+      // Si estamos editando, excluir la encuesta actual para que no se compare consigo misma
+      if (isEditing) {
+        // Se excluye por cédula (no por id: el id del servidor puede coincidir con un id local ajeno)
+        combined = combined.filter(s => !(originalDoc && s.documento_identidad === originalDoc));
+      }
+
+      const matches = checkSimilarity(
+        cleanDoc,
+        nombres || formData.nombres || '',
+        apellidos || formData.apellidos || '',
+        combined
+      );
+
+      // Un registro de otro encuestador se informa sin ningún dato personal
+      if (avisoAjeno) {
+        matches.push({
+          survey: { documento_identidad: '', nombres: 'Registro de otro encuestador', apellidos: '(consulte al administrador)', tipo_documento: '' },
+          reason: MENSAJE_SIMILAR_AJENO,
+          level: 'medium',
+        });
+      }
+
+      if (matches.length > 0) {
+        setSimilarityWarnings(matches);
+        setShowSimilarityModal(true);
+      } else {
+        setSimilarityWarnings([]);
+        setShowSimilarityModal(false);
+      }
+    } catch (simErr) {
+      console.warn('Error en verificación de similitud:', simErr);
+    } finally {
+      setCheckingSimilarity(false);
+    }
+  };
+
+  const handleNameBlur = async () => {
+    if (!existingFound && !conflictSurvey && formData.documento_identidad && formData.nombres && formData.apellidos) {
+      await verifySimilarity(formData.documento_identidad, formData.nombres, formData.apellidos);
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    if (!isEditing && existingFound && e.target.name === 'tipo_documento') {
+      setFormData({
+        tipo_documento: e.target.value,
+        documento_identidad: formData.documento_identidad || '',
+        nombres: '',
+        apellidos: '',
+        telefono_1: '',
+        telefono_2: '',
+        telefono_3: '',
+        direccion: '',
+        profesion: '',
+        fecha_registro: new Date().toISOString().split('T')[0],
+        hora_registro: new Date().toTimeString().slice(0, 5),
+        creado_en: new Date().toISOString(),
+        estado_sincronizacion: 'pendiente'
+      });
+      setExistingFound(false);
+      setNewPhoneInput('');
+      setPhoneError('');
+      return;
+    }
+
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -216,6 +434,12 @@ export default function SurveyForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (conflictSurvey) {
+      toast.error(conflictoAjeno ? MENSAJE_CEDULA_AJENA : `No se puede guardar: el documento ${formData.documento_identidad} ya está registrado en una encuesta propia.`);
+      document.getElementById('input_documento_identidad')?.focus();
+      return;
+    }
 
     // Validación: Teléfono de contacto obligatorio y formato válido
     if (!isEditing && !existingFound) {
@@ -264,14 +488,34 @@ export default function SurveyForm() {
       // marcado como 'sincronizado' sin haber llegado al servidor.
       finalData.estado_sincronizacion = 'pendiente';
       
+      const now = new Date();
       if (!isEditing && !existingFound) {
         finalData.encuestador_id = user?.id;
         finalData.encuestador_usuario = user?.usuario;
+        finalData.hora_registro = finalData.hora_registro || now.toTimeString().slice(0, 5);
+        finalData.creado_en = finalData.creado_en || now.toISOString();
       } else {
         // Preservar el encuestador original; solo completar si faltaba
         finalData.encuestador_id = formData.encuestador_id || user?.id;
         finalData.encuestador_usuario = formData.encuestador_usuario || user?.usuario;
+        if (!finalData.hora_registro) {
+          finalData.hora_registro = now.toTimeString().slice(0, 5);
+        }
+        if (!finalData.creado_en) {
+          finalData.creado_en = now.toISOString();
+        }
       }
+
+      // Escritura en SQLite. Se localiza la fila por CÉDULA y no por id: el id de la URL o del formulario
+      // puede ser el del servidor (panel de admin o copia descargada), que no corresponde a la fila local.
+      const escribirLocal = async (documentoOriginal: string) => {
+        const fila = await dbService.getSurveyByDocumento(documentoOriginal || finalData.documento_identidad);
+        if (fila?.id) {
+          await dbService.updateSurvey(fila.id, finalData);
+        } else {
+          await dbService.addSurvey(finalData);
+        }
+      };
 
       if (isEditing) {
         if (user?.rol === 'admin' && (navigator.onLine || token)) {
@@ -288,16 +532,21 @@ export default function SurveyForm() {
             });
             if (res.ok) {
               finalData.estado_sincronizacion = 'sincronizado';
+            } else {
+              const errData = await res.json().catch(() => ({}));
+              toast.error(errData.error || 'Error al actualizar la encuesta en el servidor');
+              setLoading(false);
+              return;
             }
           } catch (err) {
             console.warn('No se pudo actualizar directamente en el servidor:', err);
           }
         }
         // Actualizar también en SQLite local si existe
-        await dbService.updateSurvey(Number(id), finalData).catch(() => {});
-      } else if (existingFound && formData.id) {
-        // Si la persona ya existía localmente en SQLite, actualizar el registro existente
-        await dbService.updateSurvey(Number(formData.id), finalData).catch(() => {});
+        await escribirLocal(originalDoc).catch(() => {});
+      } else if (existingFound) {
+        // La persona ya existía: se actualiza su registro local por cédula
+        await escribirLocal('').catch(() => {});
       } else {
         if (user?.rol === 'admin' && (navigator.onLine || token)) {
           const authToken = token || localStorage.getItem('auth_token');
@@ -471,12 +720,14 @@ export default function SurveyForm() {
                           <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: 1.25 }}>
                             {match.survey.nombres} {match.survey.apellidos}
                           </div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span>{match.survey.tipo_documento || 'Doc'}:</span>
-                            <strong style={{ fontFamily: 'monospace', fontSize: '0.88rem', color: 'var(--text-main)' }}>
-                              {match.survey.documento_identidad}
-                            </strong>
-                          </div>
+                          {match.survey.documento_identidad && (
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span>{match.survey.tipo_documento || 'Doc'}:</span>
+                              <strong style={{ fontFamily: 'monospace', fontSize: '0.88rem', color: 'var(--text-main)' }}>
+                                {match.survey.documento_identidad}
+                              </strong>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <span style={{
@@ -535,6 +786,29 @@ export default function SurveyForm() {
       </header>
 
       <form onSubmit={handleSubmit} className="glass-container" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {conflictSurvey && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            padding: '0.85rem 1rem',
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.45)',
+            borderRadius: 'var(--radius-md)',
+            color: '#ef4444',
+            fontSize: '0.875rem'
+          }}>
+            <AlertTriangle size={20} style={{ flexShrink: 0 }} />
+            <div>
+              {conflictoAjeno ? (
+                <><strong>Cédula registrada por otro encuestador.</strong> El documento <strong>{formData.documento_identidad}</strong> ya existe en el sistema. Consulte al administrador; no se muestran datos de esa persona.</>
+              ) : (
+                <><strong>Conflicto de documento:</strong> El documento <strong>{formData.documento_identidad}</strong> ya está registrado en una encuesta propia (ID: #{conflictSurvey.id || 'existente'}). Debe especificar un número de documento no registrado.</>
+              )}
+            </div>
+          </div>
+        )}
+
         {existingFound && (
           <div style={{
             display: 'flex',
@@ -557,26 +831,67 @@ export default function SurveyForm() {
         <div className="responsive-grid">
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Documento de Identidad *</label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <select name="tipo_documento" value={formData.tipo_documento || 'C.C'} onChange={handleChange} className="form-input" style={{ width: '30%', minWidth: '70px', padding: '0.5rem' }}>
-                <option value="C.C">C.C</option>
-                <option value="T.I">T.I</option>
-                <option value="C.E">C.E</option>
-                <option value="NIT">NIT</option>
-                <option value="PAS">PAS</option>
-              </select>
-              <input required type="text" id="input_documento_identidad" name="documento_identidad" value={formData.documento_identidad || ''} 
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '');
-                  setFormData({...formData, documento_identidad: val});
-                  // Limpiar advertencias si el usuario corrige el número
-                  if (similarityWarnings.length > 0) setSimilarityWarnings([]);
-                }} 
-                onBlur={handleDocumentBlur}
-                maxLength={15}
-                className="form-input" placeholder="Ej. 123456789" style={{ width: '70%', flex: 1 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <select name="tipo_documento" value={formData.tipo_documento || 'C.C'} onChange={handleChange} className="form-input" style={{ width: '30%', minWidth: '70px', padding: '0.5rem' }}>
+                  <option value="C.C">C.C</option>
+                  <option value="T.I">T.I</option>
+                  <option value="C.E">C.E</option>
+                  <option value="NIT">NIT</option>
+                  <option value="PAS">PAS</option>
+                </select>
+                <input required type="text" id="input_documento_identidad" name="documento_identidad" value={formData.documento_identidad || ''} 
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    
+                    if (!isEditing && existingFound) {
+                      // Si los campos estaban autocompletados y el usuario cambia el documento,
+                      // vaciamos todos los campos para que la nueva encuesta comience limpia
+                      setFormData({
+                        tipo_documento: formData.tipo_documento || 'C.C',
+                        documento_identidad: val,
+                        nombres: '',
+                        apellidos: '',
+                        telefono_1: '',
+                        telefono_2: '',
+                        telefono_3: '',
+                        direccion: '',
+                        profesion: '',
+                        fecha_registro: new Date().toISOString().split('T')[0],
+                        hora_registro: new Date().toTimeString().slice(0, 5),
+                        creado_en: new Date().toISOString(),
+                        estado_sincronizacion: 'pendiente'
+                      });
+                      setExistingFound(false);
+                      setNewPhoneInput('');
+                      setPhoneError('');
+                    } else {
+                      setFormData(prev => ({ ...prev, documento_identidad: val }));
+                    }
+
+                    if (conflictSurvey) setConflictSurvey(null);
+                    // Limpiar advertencias si el usuario corrige el número
+                    if (similarityWarnings.length > 0) setSimilarityWarnings([]);
+                  }} 
+                  onBlur={handleDocumentBlur}
+                  maxLength={15}
+                  className="form-input" 
+                  placeholder="Ej. 123456789" 
+                  style={{ 
+                    width: '70%', 
+                    flex: 1,
+                    borderColor: conflictSurvey ? '#ef4444' : undefined,
+                    boxShadow: conflictSurvey ? '0 0 0 2px rgba(239, 68, 68, 0.2)' : undefined
+                  }} 
+                />
+              </div>
+              {conflictSurvey && (
+                <span style={{ fontSize: '0.78rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <AlertTriangle size={13} /> {conflictoAjeno ? 'Registrada por otro encuestador' : `Asignado a ${conflictSurvey.nombres} ${conflictSurvey.apellidos} (ID: #${conflictSurvey.id || 'existente'})`}
+                </span>
+              )}
               {checkingSimilarity && (
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem', display: 'block' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
                   🔍 Verificando similitud...
                 </span>
               )}
@@ -595,6 +910,7 @@ export default function SurveyForm() {
                 const val = e.target.value.replace(/[^a-zA-Z\sñÑáéíóúÁÉÍÓÚ]/g, '');
                 setFormData({...formData, nombres: val});
               }} 
+              onBlur={handleNameBlur}
               maxLength={50}
               className="form-input" placeholder="Ej. Juan Carlos" />
           </div>
@@ -606,6 +922,7 @@ export default function SurveyForm() {
                 const val = e.target.value.replace(/[^a-zA-Z\sñÑáéíóúÁÉÍÓÚ]/g, '');
                 setFormData({...formData, apellidos: val});
               }} 
+              onBlur={handleNameBlur}
               maxLength={50}
               className="form-input" placeholder="Ej. Pérez" />
           </div>
