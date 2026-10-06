@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.invalidarCacheDuplicados = invalidarCacheDuplicados;
 exports.findDuplicatesList = findDuplicatesList;
 const db_1 = require("../config/db");
-const textUtils_1 = require("../utils/textUtils");
+const duplicados_1 = require("../utils/duplicados");
 /** Tiempo que se reutiliza el resultado del análisis de duplicados (los cambios lo invalidan) */
 const TTL_MS = 30_000;
 let cache = null;
@@ -53,42 +53,19 @@ async function calcularDuplicados() {
     const filas = encuestas.map((e) => ({
         registro: e,
         doc: (e.documento_identidad || '').trim(),
-        nombre: (0, textUtils_1.normalizeText)(`${e.nombres || ''} ${e.apellidos || ''}`),
+        nombre: `${e.nombres || ''} ${e.apellidos || ''}`,
     }));
     const duplicados = [];
     for (let i = 0; i < filas.length; i++) {
         const a = filas[i];
         for (let j = i + 1; j < filas.length; j++) {
             const b = filas[j];
-            let motivo = '';
-            let nivel = 'medium';
-            if (a.doc && b.doc && a.doc === b.doc) {
-                motivo = 'Mismo número de documento de identidad exacto';
-                nivel = 'high';
-            }
-            else if (a.doc && b.doc) {
-                const docDist = (0, textUtils_1.levenshteinAcotada)(a.doc, b.doc, 2);
-                if (docDist <= 2) {
-                    motivo = `Cédula difiere en solo ${docDist} carácter${docDist > 1 ? 'es' : ''} (posible error de digitación)`;
-                    nivel = docDist === 1 ? 'high' : 'medium';
-                }
-            }
-            // Si no hubo coincidencia por cédula, comparar nombres
-            if (!motivo && a.nombre.length > 5 && b.nombre.length > 5) {
-                if (a.nombre === b.nombre) {
-                    motivo = 'Nombre completo idéntico con diferente documento';
-                    nivel = 'high';
-                }
-                else {
-                    const nameDist = (0, textUtils_1.levenshteinAcotada)(a.nombre, b.nombre, 2);
-                    if (nameDist <= 2) {
-                        motivo = `Nombre completo muy similar (${nameDist} carácter(es) de diferencia)`;
-                        nivel = 'medium';
-                    }
-                }
-            }
-            if (!motivo)
+            // Misma regla que el aviso al sincronizar: lo que el encuestador ve como advertencia debe aparecer aquí
+            const m = (0, duplicados_1.motivoPosibleDuplicado)(a.doc, a.nombre, b.doc, b.nombre);
+            if (!m)
                 continue;
+            const motivo = m.razon;
+            const nivel = m.nivel;
             // Solo se consulta el filtro de revisados para los pares que sí coinciden
             const idPar = `${a.registro.id}-${b.registro.id}`;
             if (revisadosSet.has(idPar))

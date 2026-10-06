@@ -4,6 +4,7 @@ exports.MAX_LOTE_SYNC = void 0;
 exports.processSyncBatch = processSyncBatch;
 const db_1 = require("../config/db");
 const textUtils_1 = require("../utils/textUtils");
+const duplicados_1 = require("../utils/duplicados");
 const prismaErrors_1 = require("../utils/prismaErrors");
 const visibilidad_1 = require("../utils/visibilidad");
 const duplicateService_1 = require("./duplicateService");
@@ -26,21 +27,11 @@ function detectarSimilares(docNuevo, nombreNuevo, base, userId) {
     for (const ex of base) {
         if (!ex.documento_identidad || ex.documento_identidad === docNuevo)
             continue;
-        const docDist = (0, textUtils_1.levenshteinAcotada)(docNuevo, ex.documento_identidad, 2);
-        const nombreExistente = (0, textUtils_1.normalizeText)(`${ex.nombres || ''} ${ex.apellidos || ''}`);
-        const nameDist = (0, textUtils_1.levenshteinAcotada)(nombreNuevo, nombreExistente, 3);
-        let razon = '';
-        if (docDist <= 2) {
-            razon = `Documento difiere en ${docDist} carácter(es)`;
-        }
-        else if (nombreNuevo.length > 3 && nombreExistente === nombreNuevo) {
-            razon = 'Nombre completo idéntico con documento diferente';
-        }
-        else if (nombreNuevo.length > 5 && nombreExistente.length > 5 && nameDist <= 3) {
-            razon = `Nombre muy similar (${nameDist} carácter(es) de diferencia)`;
-        }
-        if (!razon)
+        // Misma regla que la bandeja de duplicados (utils/duplicados.ts)
+        const motivo = (0, duplicados_1.motivoPosibleDuplicado)(docNuevo, nombreNuevo, ex.documento_identidad, `${ex.nombres || ''} ${ex.apellidos || ''}`);
+        if (!motivo)
             continue;
+        const razon = motivo.razon;
         if (ex.encuestador_id === userId) {
             // Registro propio del encuestador: puede ver sus datos
             similares.push({ documento_identidad: ex.documento_identidad, nombres: ex.nombres, apellidos: ex.apellidos, razon });

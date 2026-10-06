@@ -8,9 +8,20 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const db_1 = require("../config/db");
 const env_1 = require("../config/env");
+const versiones_1 = require("../utils/versiones");
+/**
+ * Versión que se ofrece a los dispositivos: la de número más alto (no la última creada).
+ * Si varias tienen el mismo número, gana la creada después.
+ */
+async function versionMasAlta() {
+    const todas = await db_1.prisma.appVersion.findMany({ orderBy: { id: 'asc' } });
+    if (todas.length === 0)
+        return null;
+    return todas.reduce((mejor, v) => ((0, versiones_1.compararVersiones)(v.version, mejor.version) >= 0 ? v : mejor));
+}
 const handleDownload = async (_req, res) => {
     try {
-        const ultima = await db_1.prisma.appVersion.findFirst({ orderBy: { id: 'desc' } });
+        const ultima = await versionMasAlta();
         if (!ultima) {
             res.status(404).json({ error: 'No hay versiones disponibles' });
             return;
@@ -31,7 +42,7 @@ const handleDownload = async (_req, res) => {
 exports.handleDownload = handleDownload;
 const handleVersionInfo = async (req, res) => {
     try {
-        const ultima = await db_1.prisma.appVersion.findFirst({ orderBy: { id: 'desc' } });
+        const ultima = await versionMasAlta();
         if (!ultima) {
             res.json({
                 version_minima: '1.0.0',

@@ -1,6 +1,7 @@
 import type { Encuesta, Prisma } from '@prisma/client';
 import { pool, prisma } from '../config/db';
-import { mergePhones, levenshteinAcotada, normalizeText } from '../utils/textUtils';
+import { mergePhones, normalizeText } from '../utils/textUtils';
+import { motivoPosibleDuplicado } from '../utils/duplicados';
 import { esViolacionUnicidad } from '../utils/prismaErrors';
 import { MENSAJE_CEDULA_AJENA, MENSAJE_SIMILAR_AJENO } from '../utils/visibilidad';
 import { invalidarCacheDuplicados } from './duplicateService';
@@ -83,19 +84,10 @@ function detectarSimilares(docNuevo: string, nombreNuevo: string, base: Registro
   for (const ex of base) {
     if (!ex.documento_identidad || ex.documento_identidad === docNuevo) continue;
 
-    const docDist = levenshteinAcotada(docNuevo, ex.documento_identidad, 2);
-    const nombreExistente = normalizeText(`${ex.nombres || ''} ${ex.apellidos || ''}`);
-    const nameDist = levenshteinAcotada(nombreNuevo, nombreExistente, 3);
-
-    let razon = '';
-    if (docDist <= 2) {
-      razon = `Documento difiere en ${docDist} carácter(es)`;
-    } else if (nombreNuevo.length > 3 && nombreExistente === nombreNuevo) {
-      razon = 'Nombre completo idéntico con documento diferente';
-    } else if (nombreNuevo.length > 5 && nombreExistente.length > 5 && nameDist <= 3) {
-      razon = `Nombre muy similar (${nameDist} carácter(es) de diferencia)`;
-    }
-    if (!razon) continue;
+    // Misma regla que la bandeja de duplicados (utils/duplicados.ts)
+    const motivo = motivoPosibleDuplicado(docNuevo, nombreNuevo, ex.documento_identidad, `${ex.nombres || ''} ${ex.apellidos || ''}`);
+    if (!motivo) continue;
+    const razon = motivo.razon;
 
     if (ex.encuestador_id === userId) {
       // Registro propio del encuestador: puede ver sus datos

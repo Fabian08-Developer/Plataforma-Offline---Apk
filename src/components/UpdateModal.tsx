@@ -220,7 +220,6 @@ export default function UpdateModal({ versionMinima, urlDescarga, descripcion, e
               <a
                 href={urlDescarga}
                 download
-                onClick={() => { if (!esObligatorio && onSkip) onSkip(); }}
                 className="um-btn-download"
                 style={{
                   display: 'flex',
@@ -241,6 +240,12 @@ export default function UpdateModal({ versionMinima, urlDescarga, descripcion, e
                 <Download size={20} />
                 Descargar v{versionMinima}
               </a>
+
+              {/* Respaldo si el botón no inicia la descarga en el celular: el enlace se puede copiar y abrir en Chrome */}
+              <div style={{ fontSize: '0.78rem', color: '#64748b', textAlign: 'center', lineHeight: 1.5 }}>
+                ¿La descarga no inicia? Copia este enlace en Chrome y ábrelo:
+                <div style={{ marginTop: '0.35rem', wordBreak: 'break-all', color: '#94a3b8', userSelect: 'all' }}>{urlDescarga}</div>
+              </div>
 
               {!esObligatorio && onSkip && (
                 <button

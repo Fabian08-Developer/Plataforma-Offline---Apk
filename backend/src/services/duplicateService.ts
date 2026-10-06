@@ -1,5 +1,5 @@
 import { pool, prisma } from '../config/db';
-import { normalizeText, levenshteinAcotada } from '../utils/textUtils';
+import { motivoPosibleDuplicado } from '../utils/duplicados';
 
 export interface DuplicadoItem {
   id: string;
@@ -63,7 +63,7 @@ async function calcularDuplicados(): Promise<DuplicadoItem[]> {
   const filas = encuestas.map((e) => ({
     registro: e,
     doc: (e.documento_identidad || '').trim(),
-    nombre: normalizeText(`${e.nombres || ''} ${e.apellidos || ''}`),
+    nombre: `${e.nombres || ''} ${e.apellidos || ''}`,
   }));
 
   const duplicados: DuplicadoItem[] = [];
@@ -73,35 +73,11 @@ async function calcularDuplicados(): Promise<DuplicadoItem[]> {
     for (let j = i + 1; j < filas.length; j++) {
       const b = filas[j];
 
-      let motivo = '';
-      let nivel: 'high' | 'medium' = 'medium';
-
-      if (a.doc && b.doc && a.doc === b.doc) {
-        motivo = 'Mismo número de documento de identidad exacto';
-        nivel = 'high';
-      } else if (a.doc && b.doc) {
-        const docDist = levenshteinAcotada(a.doc, b.doc, 2);
-        if (docDist <= 2) {
-          motivo = `Cédula difiere en solo ${docDist} carácter${docDist > 1 ? 'es' : ''} (posible error de digitación)`;
-          nivel = docDist === 1 ? 'high' : 'medium';
-        }
-      }
-
-      // Si no hubo coincidencia por cédula, comparar nombres
-      if (!motivo && a.nombre.length > 5 && b.nombre.length > 5) {
-        if (a.nombre === b.nombre) {
-          motivo = 'Nombre completo idéntico con diferente documento';
-          nivel = 'high';
-        } else {
-          const nameDist = levenshteinAcotada(a.nombre, b.nombre, 2);
-          if (nameDist <= 2) {
-            motivo = `Nombre completo muy similar (${nameDist} carácter(es) de diferencia)`;
-            nivel = 'medium';
-          }
-        }
-      }
-
-      if (!motivo) continue;
+      // Misma regla que el aviso al sincronizar: lo que el encuestador ve como advertencia debe aparecer aquí
+      const m = motivoPosibleDuplicado(a.doc, a.nombre, b.doc, b.nombre);
+      if (!m) continue;
+      const motivo = m.razon;
+      const nivel = m.nivel;
 
       // Solo se consulta el filtro de revisados para los pares que sí coinciden
       const idPar = `${a.registro.id}-${b.registro.id}`;
